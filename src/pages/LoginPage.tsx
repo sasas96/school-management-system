@@ -1,4 +1,3 @@
-```tsx
 import { FormEvent, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
@@ -10,7 +9,7 @@ export function LoginPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const sendCode = async (event: FormEvent) => {
+  async function sendCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setError('');
@@ -25,24 +24,22 @@ export function LoginPage() {
 
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error: otpError } = await supabase.auth.signInWithOtp({
       email: cleanEmail,
     });
 
     setLoading(false);
 
-    if (error) {
-      setError(error.message);
+    if (otpError) {
+      setError(otpError.message);
       return;
     }
 
     setCodeSent(true);
-    setMessage(
-      'An 8-digit verification code has been sent to your email.'
-    );
-  };
+    setMessage('An 8-digit verification code has been sent to your email.');
+  }
 
-  const verifyCode = async (event: FormEvent) => {
+  async function verifyCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setError('');
@@ -51,11 +48,6 @@ export function LoginPage() {
     const cleanEmail = email.trim().toLowerCase();
     const cleanCode = code.trim();
 
-    if (!cleanCode) {
-      setError('Please enter the verification code.');
-      return;
-    }
-
     if (!/^\d{8}$/.test(cleanCode)) {
       setError('Please enter the 8-digit verification code.');
       return;
@@ -63,7 +55,7 @@ export function LoginPage() {
 
     setLoading(true);
 
-    const { error } = await supabase.auth.verifyOtp({
+    const { error: verifyError } = await supabase.auth.verifyOtp({
       email: cleanEmail,
       token: cleanCode,
       type: 'email',
@@ -71,13 +63,13 @@ export function LoginPage() {
 
     setLoading(false);
 
-    if (error) {
-      setError(error.message);
+    if (verifyError) {
+      setError(verifyError.message);
       return;
     }
 
     setMessage('Login successful.');
-  };
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
@@ -103,14 +95,14 @@ export function LoginPage() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="your@email.com"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               disabled={loading}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
 
             <button
               type="submit"
               disabled={loading}
-              className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? 'Sending...' : 'Send Code'}
             </button>
@@ -131,32 +123,36 @@ export function LoginPage() {
               inputMode="numeric"
               autoComplete="one-time-code"
               value={code}
-              onChange={(event) =>
-                setCode(event.target.value.replace(/\D/g, '').slice(0, 8))
-              }
+              onChange={(event) => {
+                const digits = event.target.value
+                  .replace(/\D/g, '')
+                  .slice(0, 8);
+
+                setCode(digits);
+              }}
               placeholder="12345678"
               maxLength={8}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-center text-lg tracking-[0.3em] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               disabled={loading}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-center text-lg tracking-[0.3em] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
 
             <button
               type="submit"
               disabled={loading || code.length !== 8}
-              className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? 'Verifying...' : 'Verify & Continue'}
             </button>
 
             <button
               type="button"
+              disabled={loading}
               onClick={() => {
                 setCodeSent(false);
                 setCode('');
                 setError('');
                 setMessage('');
               }}
-              disabled={loading}
               className="mt-3 w-full rounded-lg px-4 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
             >
               Use a different email
@@ -179,4 +175,3 @@ export function LoginPage() {
     </div>
   );
 }
-```
