@@ -3,6 +3,8 @@ import type { AppData } from '@/types';
 const KEY = 'teacher-mgmt-data';
 
 const EMPTY: AppData = {
+  schoolName: '',
+  teacherName: '',
   classes: [],
   students: [],
   attendance: [],
@@ -27,10 +29,14 @@ export function loadData(): AppData {
     const parsed = JSON.parse(raw) as Partial<AppData>;
 
     return {
+      schoolName: parsed.schoolName ?? '',
+      teacherName: parsed.teacherName ?? '',
+
       classes: parsed.classes ?? [],
       students: parsed.students ?? [],
       attendance: parsed.attendance ?? [],
       assessments: parsed.assessments ?? [],
+
       integratedActivities:
         parsed.integratedActivities ?? [],
     };

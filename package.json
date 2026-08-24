@@ -12,11 +12,16 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
+    "arabic-persian-reshaper": "^1.0.1",
+    "bidi-js": "^1.0.3",
     "exceljs": "^4.4.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.446.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",

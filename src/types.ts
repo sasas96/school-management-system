@@ -7,25 +7,164 @@ export interface ClassRoom {
   academicYear: string;
 }
 
+/* =====================================================
+   EDUCATIONAL OPTIONS
+   ===================================================== */
+
+export type LearningStyle =
+  | 'Visual'
+  | 'Auditory'
+  | 'Reading/Writing'
+  | 'Kinesthetic'
+  | 'Mixed'
+  | 'Not identified';
+
+export type LearningPreference =
+  | 'Individual work'
+  | 'Pair work'
+  | 'Group work'
+  | 'Mixed';
+
+export type ParticipationLevel =
+  | 'Very active'
+  | 'Active'
+  | 'Sometimes participates'
+  | 'Rarely participates'
+  | 'Passive';
+
+export type LearningBehaviour =
+  | 'Independent'
+  | 'Needs guidance'
+  | 'Easily distracted'
+  | 'Consistent'
+  | 'Mixed';
+
+export type MotivationLevel =
+  | 'Highly motivated'
+  | 'Motivated'
+  | 'Inconsistent'
+  | 'Low motivation'
+  | 'Unknown';
+
+export type SkillLevel =
+  | 'Strong'
+  | 'Good'
+  | 'Developing'
+  | 'Needs support'
+  | 'Not assessed';
+
+export type ClassroomBehaviour =
+  | 'Excellent'
+  | 'Good'
+  | 'Generally good'
+  | 'Needs monitoring'
+  | 'Frequent difficulties';
+
+export type AttentionLevel =
+  | 'Focused'
+  | 'Usually focused'
+  | 'Easily distracted'
+  | 'Needs frequent reminders';
+
+export type FamilyFollowUp =
+  | 'Good'
+  | 'Occasional'
+  | 'Limited'
+  | 'Unknown';
+
+export type SupportRequired =
+  | 'None'
+  | 'Academic support'
+  | 'Behavioural support'
+  | 'Individual attention'
+  | 'Parental follow-up'
+  | 'Regular monitoring';
+
+export type HealthConsideration =
+  | 'None'
+  | 'Vision'
+  | 'Hearing'
+  | 'Mobility'
+  | 'Medical consideration'
+  | 'Other'
+  | 'Not provided';
+
+/* =====================================================
+   STUDENT
+   ===================================================== */
+
 export interface Student {
   id: string;
+  massarCode: string;
   name: string;
-
-  /*
-   * Arabic name used in official reports.
-   * Optional so old students/data do not break.
-   */
   nameAr?: string;
-
-  /*
-   * Date of birth.
-   * Stored as YYYY-MM-DD.
-   */
   dateOfBirth?: string;
-
   classId: string;
   gender: Gender;
+
+  /*
+   * EDUCATIONAL PROFILE
+   */
+
+  learningStyle?: LearningStyle;
+  learningPreference?: LearningPreference;
+  participationLevel?: ParticipationLevel;
+  learningBehaviour?: LearningBehaviour;
+  motivationLevel?: MotivationLevel;
+
+  learningNeeds?: string;
+  strengths?: string;
+  areasForImprovement?: string;
+
+  /*
+   * CLASSROOM BEHAVIOUR
+   */
+
+  classroomBehaviour?: ClassroomBehaviour;
+  attentionLevel?: AttentionLevel;
+
+  /*
+   * LANGUAGE & SKILLS
+   */
+
+  englishLevel?: SkillLevel;
+  speakingLevel?: SkillLevel;
+  listeningLevel?: SkillLevel;
+  readingLevel?: SkillLevel;
+  writingLevel?: SkillLevel;
+
+  /*
+   * INTERESTS
+   */
+
+  interests?: string;
+  favouriteTopics?: string;
+
+  /*
+   * SOCIAL / FAMILY
+   */
+
+  familyFollowUp?: FamilyFollowUp;
+  socialSupport?: SupportRequired;
+
+  /*
+   * HEALTH / SUPPORT
+   */
+
+  healthConsideration?: HealthConsideration;
+  healthNotes?: string;
+  supportRequired?: SupportRequired;
+
+  /*
+   * TEACHER NOTES
+   */
+
+  teacherNotes?: string;
 }
+
+/* =====================================================
+   ATTENDANCE
+   ===================================================== */
 
 export type AttendanceStatus =
   | 'Present'
@@ -40,9 +179,17 @@ export interface AttendanceRecord {
   status: AttendanceStatus;
 }
 
+/* =====================================================
+   TERMS
+   ===================================================== */
+
 export type Term =
   | 'First Term'
   | 'Second Term';
+
+/* =====================================================
+   ASSESSMENTS
+   ===================================================== */
 
 export type OfficialAssessment =
   | 'Quiz 1'
@@ -69,6 +216,10 @@ export interface AssessmentRecord {
   maxScore: number;
 }
 
+/* =====================================================
+   INTEGRATED ACTIVITIES
+   ===================================================== */
+
 export interface IntegratedActivityRecord {
   id: string;
   studentId: string;
@@ -83,13 +234,24 @@ export interface IntegratedActivityRecord {
   total: number;
 }
 
+/* =====================================================
+   APP DATA
+   ===================================================== */
+
 export interface AppData {
+  schoolName?: string;
+  teacherName?: string;
+
   classes: ClassRoom[];
   students: Student[];
   attendance: AttendanceRecord[];
   assessments: AssessmentRecord[];
   integratedActivities: IntegratedActivityRecord[];
 }
+
+/* =====================================================
+   STUDENT SUMMARY
+   ===================================================== */
 
 export type Progress =
   | 'Improving'

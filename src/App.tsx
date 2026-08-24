@@ -12,6 +12,7 @@ import { StudentsPage } from '@/pages/StudentsPage';
 import { AttendancePage } from '@/pages/AttendancePage';
 import { AssessmentsPage } from '@/pages/AssessmentsPage';
 import { ReportsPage } from '@/pages/ReportsPage';
+import { SettingsPage } from '@/pages/SettingsPage';
 
 import { BackupBar } from '@/components/BackupBar';
 
@@ -27,6 +28,7 @@ import {
   X,
   ChevronRight,
   LogOut,
+  Settings,
 } from 'lucide-react';
 
 type PageId =
@@ -35,7 +37,8 @@ type PageId =
   | 'students'
   | 'attendance'
   | 'assessments'
-  | 'reports';
+  | 'reports'
+  | 'settings';
 
 type NavItem = {
   id: PageId;
@@ -73,6 +76,11 @@ const NAV: NavItem[] = [
     id: 'reports',
     label: 'Reports & Export',
     icon: FileText,
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    icon: Settings,
   },
 ];
 
@@ -145,6 +153,9 @@ function App() {
 
       case 'reports':
         return <ReportsPage />;
+
+      case 'settings':
+        return <SettingsPage />;
 
       default:
         return <DashboardPage />;

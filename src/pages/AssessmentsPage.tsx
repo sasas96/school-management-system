@@ -1,13 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
 import { useData } from '@/store/DataContext';
+
 import type {
   AssessmentRecord,
+  IntegratedActivityRecord,
   OfficialAssessment,
   Term,
-  IntegratedActivityRecord,
 } from '@/types';
-import { nextAssessmentId } from '@/lib/storage';
-import { Save } from 'lucide-react';
+
+import {
+  Download,
+  Save,
+} from 'lucide-react';
+
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 /*
  * =====================================================
@@ -30,20 +42,6 @@ type IntegratedDraft = Record<
 type AssessmentSelection =
   | OfficialAssessment
   | 'Integrated Activities';
-
-/*
- * The current project may still have an older
- * IntegratedActivityRecord type.
- *
- * These fields are required by the new assessment
- * system, so we extend the existing type locally.
- */
-
-type IntegratedActivityWithTerm =
-  IntegratedActivityRecord & {
-    academicYear: string;
-    term: Term;
-  };
 
 /*
  * =====================================================
@@ -74,6 +72,50 @@ const ASSESSMENTS: {
   },
 ];
 
+const INTEGRATED_FIELDS = [
+  'discipline',
+  'participation',
+  'copybook',
+  'projects',
+] as const;
+
+type IntegratedField =
+  (typeof INTEGRATED_FIELDS)[number];
+
+const EMPTY_INTEGRATED_VALUES = {
+  discipline: '',
+  participation: '',
+  copybook: '',
+  projects: '',
+};
+
+/*
+ * =====================================================
+ * HELPERS
+ * =====================================================
+ */
+
+const formatScore = (
+  value: number
+): string => {
+  if (
+    Number.isInteger(value)
+  ) {
+    return String(value);
+  }
+
+  return String(
+    Number(value.toFixed(2))
+  );
+};
+
+const formatScoreOutOf = (
+  value: number,
+  max: number
+): string => {
+  return `${formatScore(value)}/${max}`;
+};
+
 /*
  * =====================================================
  * PAGE
@@ -90,7 +132,7 @@ export function AssessmentsPage() {
    */
 
   const [classId, setClassId] = useState(
-    data.classes[0]?.id ?? ''
+    data.classes?.[0]?.id ?? ''
   );
 
   const [term, setTerm] =
@@ -109,40 +151,28 @@ export function AssessmentsPage() {
   const [integratedDraft, setIntegratedDraft] =
     useState<IntegratedDraft>({});
 
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] =
+    useState(false);
 
   /*
    * ===================================================
-   * SAFE DATA
+   * DATA
    * ===================================================
    */
 
   const classes = data.classes ?? [];
   const students = data.students ?? [];
   const assessments = data.assessments ?? [];
-
-  /*
-   * Cast locally so the page can work with the
-   * extended Integrated Activity structure.
-   */
-
   const integratedActivities =
-    (data.integratedActivities ??
-      []) as IntegratedActivityWithTerm[];
-
-  /*
-   * ===================================================
-   * SELECTION
-   * ===================================================
-   */
+    data.integratedActivities ?? [];
 
   const isIntegrated =
     assessmentName === 'Integrated Activities';
 
   const selectedAssessment =
     ASSESSMENTS.find(
-      (assessment) =>
-        assessment.name === assessmentName
+      (item) =>
+        item.name === assessmentName
     );
 
   const maxScore =
@@ -150,11 +180,14 @@ export function AssessmentsPage() {
 
   const selectedClass =
     classes.find(
-      (classRoom) => classRoom.id === classId
+      (item) => item.id === classId
     );
 
   const academicYear =
     selectedClass?.academicYear ?? '';
+
+  const className =
+    selectedClass?.name ?? '—';
 
   /*
    * ===================================================
@@ -171,7 +204,32 @@ export function AssessmentsPage() {
 
   /*
    * ===================================================
-   * LOAD NORMAL ASSESSMENTS
+   * MASSAR CODE
+   * ===================================================
+   */
+
+  const updateMassarCode = (
+    studentId: string,
+    value: string
+  ) => {
+    setData((previous) => ({
+      ...previous,
+
+      students: previous.students.map(
+        (student) =>
+          student.id === studentId
+            ? {
+                ...student,
+                massarCode: value,
+              }
+            : student
+      ),
+    }));
+  };
+
+  /*
+   * ===================================================
+   * LOAD NORMAL ASSESSMENT
    * ===================================================
    */
 
@@ -242,27 +300,24 @@ export function AssessmentsPage() {
             activity.date === date
         );
 
-      newDraft[student.id] = {
-        discipline:
-          existing !== undefined
-            ? String(existing.discipline)
-            : '',
+      newDraft[student.id] =
+        existing !== undefined
+          ? {
+              discipline:
+                String(existing.discipline),
 
-        participation:
-          existing !== undefined
-            ? String(existing.participation)
-            : '',
+              participation:
+                String(existing.participation),
 
-        copybook:
-          existing !== undefined
-            ? String(existing.copybook)
-            : '',
+              copybook:
+                String(existing.copybook),
 
-        projects:
-          existing !== undefined
-            ? String(existing.projects)
-            : '',
-      };
+              projects:
+                String(existing.projects),
+            }
+          : {
+              ...EMPTY_INTEGRATED_VALUES,
+            };
     }
 
     setIntegratedDraft(newDraft);
@@ -279,17 +334,17 @@ export function AssessmentsPage() {
 
   /*
    * ===================================================
-   * NORMAL SCORE UPDATE
+   * NORMAL SCORE
    * ===================================================
    */
 
   const setScore = (
     studentId: string,
-    score: string
+    value: string
   ) => {
     setDraft((current) => ({
       ...current,
-      [studentId]: score,
+      [studentId]: value,
     }));
 
     setSaved(false);
@@ -297,17 +352,13 @@ export function AssessmentsPage() {
 
   /*
    * ===================================================
-   * INTEGRATED SCORE UPDATE
+   * INTEGRATED SCORE
    * ===================================================
    */
 
   const updateIntegratedScore = (
     studentId: string,
-    field:
-      | 'discipline'
-      | 'participation'
-      | 'copybook'
-      | 'projects',
+    field: IntegratedField,
     value: string
   ) => {
     setIntegratedDraft((current) => ({
@@ -315,10 +366,7 @@ export function AssessmentsPage() {
 
       [studentId]: {
         ...(current[studentId] ?? {
-          discipline: '',
-          participation: '',
-          copybook: '',
-          projects: '',
+          ...EMPTY_INTEGRATED_VALUES,
         }),
 
         [field]: value,
@@ -328,19 +376,9 @@ export function AssessmentsPage() {
     setSaved(false);
   };
 
-  /*
-   * ===================================================
-   * GET INTEGRATED FIELD
-   * ===================================================
-   */
-
   const getIntegratedScore = (
     studentId: string,
-    field:
-      | 'discipline'
-      | 'participation'
-      | 'copybook'
-      | 'projects'
+    field: IntegratedField
   ) => {
     return (
       integratedDraft[studentId]?.[field] ??
@@ -348,57 +386,31 @@ export function AssessmentsPage() {
     );
   };
 
-  /*
-   * ===================================================
-   * GET INTEGRATED TOTAL
-   * ===================================================
-   */
-
   const getIntegratedTotal = (
     studentId: string
   ) => {
-    const studentDraft =
+    const values =
       integratedDraft[studentId];
 
-    if (!studentDraft) {
+    if (!values) {
       return 0;
     }
 
-    const discipline =
-      parseFloat(
-        studentDraft.discipline
-      ) || 0;
-
-    const participation =
-      parseFloat(
-        studentDraft.participation
-      ) || 0;
-
-    const copybook =
-      parseFloat(
-        studentDraft.copybook
-      ) || 0;
-
-    const projects =
-      parseFloat(
-        studentDraft.projects
-      ) || 0;
-
     return (
-      discipline +
-      participation +
-      copybook +
-      projects
+      (Number(values.discipline) || 0) +
+      (Number(values.participation) || 0) +
+      (Number(values.copybook) || 0) +
+      (Number(values.projects) || 0)
     );
   };
 
   /*
    * ===================================================
-   * INTEGRATED SCORE VALIDATION
+   * VALIDATION
    * ===================================================
    */
 
-  const isInvalidIntegratedScore = (
+  const invalidIntegrated = (
     value: string
   ) => {
     if (value.trim() === '') {
@@ -416,39 +428,11 @@ export function AssessmentsPage() {
 
   /*
    * ===================================================
-   * NORMAL SCORE VALIDATION
-   * ===================================================
-   */
-
-  const isInvalidNormalScore = (
-    value: string
-  ) => {
-    if (value.trim() === '') {
-      return false;
-    }
-
-    const score = Number(value);
-
-    return (
-      !Number.isFinite(score) ||
-      score < 0 ||
-      score > maxScore
-    );
-  };
-
-  /*
-   * ===================================================
    * SAVE
    * ===================================================
    */
 
   const save = () => {
-    /*
-     * -------------------------------------------------
-     * BASIC VALIDATION
-     * -------------------------------------------------
-     */
-
     if (!classId) {
       alert('Please select a class.');
       return;
@@ -477,50 +461,22 @@ export function AssessmentsPage() {
     if (isIntegrated) {
       const errors: string[] = [];
 
-      /*
-       * VALIDATE ALL FIELDS
-       */
-
       for (const student of classStudents) {
-        const studentDraft =
+        const values =
           integratedDraft[student.id];
 
-        if (!studentDraft) {
+        if (!values) {
           continue;
         }
 
-        const fields = [
-          {
-            label: 'Discipline',
-            value:
-              studentDraft.discipline,
-          },
-          {
-            label: 'Participation',
-            value:
-              studentDraft.participation,
-          },
-          {
-            label: 'Copybook',
-            value:
-              studentDraft.copybook,
-          },
-          {
-            label: 'Projects',
-            value:
-              studentDraft.projects,
-          },
-        ];
+        for (const field of INTEGRATED_FIELDS) {
+          const value = values[field];
 
-        for (const field of fields) {
-          if (
-            field.value.trim() === ''
-          ) {
+          if (value.trim() === '') {
             continue;
           }
 
-          const score =
-            Number(field.value);
+          const score = Number(value);
 
           if (
             !Number.isFinite(score) ||
@@ -528,7 +484,7 @@ export function AssessmentsPage() {
             score > 5
           ) {
             errors.push(
-              `${student.name}: ${field.label} must be between 0 and 5`
+              `${student.name}: ${field} must be between 0 and 5`
             );
           }
         }
@@ -539,58 +495,50 @@ export function AssessmentsPage() {
           'Please fix these errors:\n\n' +
             errors.join('\n')
         );
-
         return;
       }
 
-      /*
-       * CREATE RECORDS
-       */
+      const records:
+        IntegratedActivityRecord[] = [];
 
-      const records: IntegratedActivityWithTerm[] =
-        [];
+      const idBase = Date.now();
 
-      for (const student of classStudents) {
-        const studentDraft =
+      for (
+        let index = 0;
+        index < classStudents.length;
+        index++
+      ) {
+        const student =
+          classStudents[index];
+
+        const values =
           integratedDraft[student.id];
 
-        if (!studentDraft) {
+        if (!values) {
           continue;
         }
 
-        const hasAnyScore =
-          studentDraft.discipline.trim() !==
-            '' ||
-          studentDraft.participation.trim() !==
-            '' ||
-          studentDraft.copybook.trim() !==
-            '' ||
-          studentDraft.projects.trim() !==
-            '';
+        const hasAny =
+          INTEGRATED_FIELDS.some(
+            (field) =>
+              values[field].trim() !== ''
+          );
 
-        if (!hasAnyScore) {
+        if (!hasAny) {
           continue;
         }
 
         const discipline =
-          Number(
-            studentDraft.discipline
-          ) || 0;
+          Number(values.discipline) || 0;
 
         const participation =
-          Number(
-            studentDraft.participation
-          ) || 0;
+          Number(values.participation) || 0;
 
         const copybook =
-          Number(
-            studentDraft.copybook
-          ) || 0;
+          Number(values.copybook) || 0;
 
         const projects =
-          Number(
-            studentDraft.projects
-          ) || 0;
+          Number(values.projects) || 0;
 
         const total =
           discipline +
@@ -611,36 +559,21 @@ export function AssessmentsPage() {
               activity.date === date
           );
 
-        const newId =
-          existing?.id ??
-          `IA${String(
-            integratedActivities.length +
-              records.length +
-              1
-          ).padStart(4, '0')}`;
-
         records.push({
-          id: newId,
+          id:
+            existing?.id ??
+            `IA-${idBase}-${index}`,
 
-          studentId:
-            student.id,
-
+          studentId: student.id,
           classId,
-
           academicYear,
-
           term,
-
           date,
 
           discipline,
-
           participation,
-
           copybook,
-
           projects,
-
           total,
         });
       }
@@ -649,31 +582,24 @@ export function AssessmentsPage() {
         alert(
           'No scores entered to save.'
         );
-
         return;
       }
 
-      /*
-       * SAVE INTEGRATED ACTIVITIES
-       */
-
       setData((previous) => {
         const current =
-          (previous.integratedActivities ??
-            []) as IntegratedActivityWithTerm[];
+          previous.integratedActivities ??
+          [];
 
-        const kept =
-          current.filter(
-            (activity) =>
-              !(
-                activity.classId ===
-                  classId &&
-                activity.academicYear ===
-                  academicYear &&
-                activity.term === term &&
-                activity.date === date
-              )
-          );
+        const kept = current.filter(
+          (activity) =>
+            !(
+              activity.classId === classId &&
+              activity.academicYear ===
+                academicYear &&
+              activity.term === term &&
+              activity.date === date
+            )
+        );
 
         return {
           ...previous,
@@ -686,69 +612,50 @@ export function AssessmentsPage() {
       });
 
       setSaved(true);
-
       return;
     }
 
     /*
      * =================================================
-     * NORMAL ASSESSMENTS
+     * NORMAL ASSESSMENT
      * =================================================
      */
 
     const errors: string[] = [];
+    const records: AssessmentRecord[] = [];
 
-    const records: AssessmentRecord[] =
-      [];
+    const idBase = Date.now();
 
-    for (const student of classStudents) {
-      const rawScore =
+    for (
+      let index = 0;
+      index < classStudents.length;
+      index++
+    ) {
+      const student =
+        classStudents[index];
+
+      const raw =
         draft[student.id];
 
-      /*
-       * Empty score is allowed.
-       */
-
       if (
-        rawScore === undefined ||
-        rawScore.trim() === ''
+        raw === undefined ||
+        raw.trim() === ''
       ) {
         continue;
       }
 
-      const score =
-        Number(rawScore);
-
-      /*
-       * INVALID NUMBER
-       */
-
-      if (!Number.isFinite(score)) {
-        errors.push(
-          `${student.name}: invalid score`
-        );
-
-        continue;
-      }
-
-      /*
-       * OUT OF RANGE
-       */
+      const score = Number(raw);
 
       if (
+        !Number.isFinite(score) ||
         score < 0 ||
         score > maxScore
       ) {
         errors.push(
           `${student.name}: score must be between 0 and ${maxScore}`
         );
-
         continue;
       }
-
-      /*
-       * EXISTING RECORD
-       */
 
       const existing =
         assessments.find(
@@ -764,26 +671,14 @@ export function AssessmentsPage() {
               assessmentName
         );
 
-      /*
-       * CREATE RECORD
-       */
-
       records.push({
         id:
           existing?.id ??
-          nextAssessmentId(
-            assessments
-          ),
+          `A-${idBase}-${index}`,
 
-        studentId:
-          student.id,
-
+        studentId: student.id,
         classId,
-
         academicYear,
-
-        term,
-
         date,
 
         name:
@@ -795,58 +690,42 @@ export function AssessmentsPage() {
             ? 'Test'
             : 'Quiz',
 
+        term,
         score,
-
         maxScore,
       });
     }
-
-    /*
-     * SHOW ERRORS
-     */
 
     if (errors.length > 0) {
       alert(
         'Please fix these errors:\n\n' +
           errors.join('\n')
       );
-
       return;
     }
-
-    /*
-     * NOTHING TO SAVE
-     */
 
     if (records.length === 0) {
       alert(
         'No scores entered to save.'
       );
-
       return;
     }
-
-    /*
-     * SAVE NORMAL ASSESSMENTS
-     */
 
     setData((previous) => {
       const current =
         previous.assessments ?? [];
 
-      const kept =
-        current.filter(
-          (assessment) =>
-            !(
-              assessment.classId ===
-                classId &&
-              assessment.academicYear ===
-                academicYear &&
-              assessment.term === term &&
-              assessment.name ===
-                assessmentName
-            )
-        );
+      const kept = current.filter(
+        (assessment) =>
+          !(
+            assessment.classId === classId &&
+            assessment.academicYear ===
+              academicYear &&
+            assessment.term === term &&
+            assessment.name ===
+              assessmentName
+          )
+      );
 
       return {
         ...previous,
@@ -863,12 +742,656 @@ export function AssessmentsPage() {
 
   /*
    * ===================================================
-   * CLASS NAME
+   * REPORT HELPERS
    * ===================================================
    */
 
-  const className =
-    selectedClass?.name ?? '—';
+  const getRemarks = (
+    grade: number
+  ) => {
+    if (grade >= 17) {
+      return 'Excellent';
+    }
+
+    if (grade >= 14) {
+      return 'Good';
+    }
+
+    if (grade >= 10) {
+      return 'Satisfactory';
+    }
+
+    if (grade >= 5) {
+      return 'Weak';
+    }
+
+    return 'Poor';
+  };
+
+  const getAssessmentScore = (
+    studentId: string,
+    name: OfficialAssessment
+  ) => {
+    const record =
+      assessments.find(
+        (assessment) =>
+          assessment.studentId ===
+            studentId &&
+          assessment.classId ===
+            classId &&
+          assessment.academicYear ===
+            academicYear &&
+          assessment.term === term &&
+          assessment.name === name
+      );
+
+    return record?.score ?? null;
+  };
+
+  const getIntegratedRecord = (
+    studentId: string
+  ) => {
+    return integratedActivities.find(
+      (activity) =>
+        activity.studentId ===
+          studentId &&
+        activity.classId ===
+          classId &&
+        activity.academicYear ===
+          academicYear &&
+        activity.term === term &&
+        activity.date === date
+    );
+  };
+
+  /*
+   * ===================================================
+   * PDF EXPORT
+   * ===================================================
+   */
+
+  const exportPDF = async () => {
+    if (!classId) {
+      alert('Please select a class.');
+      return;
+    }
+
+    if (!academicYear) {
+      alert(
+        'This class has no academic year.'
+      );
+      return;
+    }
+
+    if (classStudents.length === 0) {
+      alert(
+        'This class has no students.'
+      );
+      return;
+    }
+
+    try {
+      /*
+       * ===============================================
+       * CREATE PDF
+       * ===============================================
+       */
+
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      /*
+       * ===============================================
+       * LOAD AMIRI FONT
+       * ===============================================
+       */
+
+      try {
+        const fontResponse = await fetch(
+          '/fonts/Amiri-Regular.ttf'
+        );
+
+        if (!fontResponse.ok) {
+          throw new Error(
+            'Amiri font could not be loaded.'
+          );
+        }
+
+        const fontBuffer =
+          await fontResponse.arrayBuffer();
+
+        const uint8Array =
+          new Uint8Array(fontBuffer);
+
+        let binary = '';
+
+        const chunkSize = 0x8000;
+
+        for (
+          let i = 0;
+          i < uint8Array.length;
+          i += chunkSize
+        ) {
+          binary += String.fromCharCode(
+            ...uint8Array.subarray(
+              i,
+              Math.min(
+                i + chunkSize,
+                uint8Array.length
+              )
+            )
+          );
+        }
+
+        const base64 = btoa(binary);
+
+        doc.addFileToVFS(
+          'Amiri-Regular.ttf',
+          base64
+        );
+
+        doc.addFont(
+          'Amiri-Regular.ttf',
+          'Amiri',
+          'normal'
+        );
+
+        doc.setFont(
+          'Amiri',
+          'normal'
+        );
+      } catch (fontError) {
+        console.error(
+          'Amiri font loading error:',
+          fontError
+        );
+
+        alert(
+          'Arabic font could not be loaded. Please make sure Amiri-Regular.ttf exists in public/fonts/.'
+        );
+
+        return;
+      }
+
+      /*
+       * ===============================================
+       * INFORMATION
+       * ===============================================
+       */
+
+      const schoolName =
+        data.schoolName?.trim() ||
+        'School Name';
+
+      const teacherName =
+        data.teacherName?.trim() ||
+        'Teacher Name';
+
+      const pageWidth =
+        doc.internal.pageSize.getWidth();
+
+      /*
+       * ===============================================
+       * HEADER
+       * ===============================================
+       */
+
+      doc.setFont(
+        'Amiri',
+        'normal'
+      );
+
+      doc.setFontSize(15);
+
+      doc.text(
+        'CONTINUOUS ASSESSMENT RECORD',
+        pageWidth / 2,
+        14,
+        {
+          align: 'center',
+        }
+      );
+
+      /*
+       * LEFT INFORMATION
+       */
+
+      doc.setFontSize(9);
+
+      doc.text(
+        `School: ${schoolName}`,
+        12,
+        25
+      );
+
+      doc.text(
+        `Teacher: ${teacherName}`,
+        12,
+        32
+      );
+
+      doc.text(
+        `Class: ${className}`,
+        12,
+        39
+      );
+
+      /*
+       * RIGHT INFORMATION
+       */
+
+      doc.text(
+        `Academic Year: ${academicYear}`,
+        pageWidth - 12,
+        25,
+        {
+          align: 'right',
+        }
+      );
+
+      doc.text(
+        `Term: ${term}`,
+        pageWidth - 12,
+        32,
+        {
+          align: 'right',
+        }
+      );
+
+      doc.text(
+        `Assessment: ${
+          isIntegrated
+            ? 'Integrated Activities'
+            : 'All Assessments'
+        }`,
+        pageWidth - 12,
+        39,
+        {
+          align: 'right',
+        }
+      );
+
+      /*
+       * ===============================================
+       * SEPARATOR
+       * ===============================================
+       */
+
+      doc.setDrawColor(
+        180,
+        180,
+        180
+      );
+
+      doc.setLineWidth(0.3);
+
+      doc.line(
+        12,
+        44,
+        pageWidth - 12,
+        44
+      );
+
+      /*
+       * ===============================================
+       * TABLE HEAD
+       * ===============================================
+       */
+
+      const tableHead = [
+        [
+          'N°',
+          'Massar Code',
+          'Student Name',
+          'Quiz 1',
+          'Quiz 2',
+          'Quiz Total /20',
+          'Global Test /20',
+          'Integrated Activities /20',
+          'Remarks',
+        ],
+      ];
+
+      /*
+       * ===============================================
+       * TABLE BODY
+       * ===============================================
+       */
+
+      const tableBody =
+        classStudents.map(
+          (student, index) => {
+            const quiz1 =
+              getAssessmentScore(
+                student.id,
+                'Quiz 1'
+              );
+
+            const quiz2 =
+              getAssessmentScore(
+                student.id,
+                'Quiz 2'
+              );
+
+            const globalTest =
+              getAssessmentScore(
+                student.id,
+                'Global Test'
+              );
+
+            const integrated =
+              getIntegratedRecord(
+                student.id
+              );
+
+            /*
+             * Quiz 1 + Quiz 2 = /20
+             */
+
+            const quizTotal =
+              quiz1 !== null &&
+              quiz2 !== null
+                ? quiz1 + quiz2
+                : null;
+
+            /*
+             * Components used only
+             * for Remarks.
+             */
+
+            const components: number[] = [];
+
+            if (quizTotal !== null) {
+              components.push(
+                quizTotal
+              );
+            }
+
+            if (globalTest !== null) {
+              components.push(
+                globalTest
+              );
+            }
+
+            const integratedTotal =
+              integrated?.total ?? null;
+
+            if (
+              integratedTotal !== null
+            ) {
+              components.push(
+                integratedTotal
+              );
+            }
+
+            const grade =
+              components.length > 0
+                ? components.reduce(
+                    (
+                      total,
+                      value
+                    ) =>
+                      total + value,
+                    0
+                  ) /
+                  components.length
+                : 0;
+
+            return [
+              String(index + 1),
+
+              student.massarCode ?? '',
+
+              student.name,
+
+              quiz1 !== null
+                ? formatScoreOutOf(
+                    quiz1,
+                    10
+                  )
+                : '',
+
+              quiz2 !== null
+                ? formatScoreOutOf(
+                    quiz2,
+                    10
+                  )
+                : '',
+
+              quizTotal !== null
+                ? formatScoreOutOf(
+                    quizTotal,
+                    20
+                  )
+                : '',
+
+              globalTest !== null
+                ? formatScoreOutOf(
+                    globalTest,
+                    20
+                  )
+                : '',
+
+              integratedTotal !== null
+                ? formatScoreOutOf(
+                    integratedTotal,
+                    20
+                  )
+                : '',
+
+              getRemarks(grade),
+            ];
+          }
+        );
+
+      /*
+       * ===============================================
+       * PDF TABLE
+       * ===============================================
+       */
+
+      autoTable(doc, {
+        head: tableHead,
+
+        body: tableBody,
+
+        startY: 49,
+
+        theme: 'grid',
+
+        styles: {
+          font: 'Amiri',
+          fontStyle: 'normal',
+          fontSize: 7,
+          textColor: [0, 0, 0],
+          lineColor: [0, 0, 0],
+          lineWidth: 0.2,
+          cellPadding: 2,
+          valign: 'middle',
+          halign: 'center',
+        },
+
+        headStyles: {
+          font: 'Amiri',
+          fontStyle: 'normal',
+          fontSize: 7,
+          textColor: [0, 0, 0],
+          fillColor: [242, 242, 242],
+          lineColor: [0, 0, 0],
+          lineWidth: 0.2,
+          halign: 'center',
+          valign: 'middle',
+        },
+
+        columnStyles: {
+          0: {
+            cellWidth: 9,
+            halign: 'center',
+          },
+
+          1: {
+            cellWidth: 27,
+            halign: 'center',
+          },
+
+          2: {
+            cellWidth: 55,
+            halign: 'left',
+          },
+
+          3: {
+            cellWidth: 20,
+            halign: 'center',
+          },
+
+          4: {
+            cellWidth: 20,
+            halign: 'center',
+          },
+
+          5: {
+            cellWidth: 27,
+            halign: 'center',
+            fontStyle: 'bold',
+          },
+
+          6: {
+            cellWidth: 27,
+            halign: 'center',
+            fontStyle: 'bold',
+          },
+
+          7: {
+            cellWidth: 36,
+            halign: 'center',
+            fontStyle: 'bold',
+          },
+
+          8: {
+            cellWidth: 32,
+            halign: 'center',
+            fontStyle: 'bold',
+          },
+        },
+
+        margin: {
+          left: 10,
+          right: 10,
+          top: 49,
+          bottom: 15,
+        },
+
+        didParseCell: (hookData) => {
+          /*
+           * Bold:
+           * Quiz Total
+           * Global Test
+           * Integrated Activities
+           * Remarks
+           */
+
+          if (
+            hookData.column.index === 5 ||
+            hookData.column.index === 6 ||
+            hookData.column.index === 7 ||
+            hookData.column.index === 8
+          ) {
+            hookData.cell.styles.fontStyle =
+              'bold';
+          }
+
+          /*
+           * Keep Amiri for all cells.
+           */
+
+          hookData.cell.styles.font =
+            'Amiri';
+        },
+
+        didDrawPage: () => {
+          const pageHeight =
+            doc.internal.pageSize.getHeight();
+
+          const pageNumber =
+            doc.getNumberOfPages();
+
+          doc.setFont(
+            'Amiri',
+            'normal'
+          );
+
+          doc.setFontSize(7);
+
+          doc.setTextColor(
+            90,
+            90,
+            90
+          );
+
+          doc.text(
+            'Generated by Teacher Manager',
+            10,
+            pageHeight - 7
+          );
+
+          doc.text(
+            `Page ${pageNumber}`,
+            pageWidth - 10,
+            pageHeight - 7,
+            {
+              align: 'right',
+            }
+          );
+        },
+      });
+
+      /*
+       * ===============================================
+       * FILE NAME
+       * ===============================================
+       */
+
+      const safeClassName =
+        className
+          .replace(
+            /[^a-z0-9]+/gi,
+            '-'
+          )
+          .replace(
+            /^-+|-+$/g,
+            ''
+          ) ||
+        'Class';
+
+      const safeTerm =
+        term.replace(
+          /\s+/g,
+          '-'
+        );
+
+      /*
+       * ===============================================
+       * SAVE PDF
+       * ===============================================
+       */
+
+      doc.save(
+        `Continuous-Assessment-${safeClassName}-${safeTerm}.pdf`
+      );
+    } catch (error) {
+      console.error(
+        'PDF generation error:',
+        error
+      );
+
+      alert(
+        'Could not generate the PDF file. Please check the browser console.'
+      );
+    }
+  };
 
   /*
    * ===================================================
@@ -877,11 +1400,9 @@ export function AssessmentsPage() {
    */
 
   return (
-    <div className="space-y-5">
+    <div className="min-h-full space-y-5 bg-slate-100 p-1">
 
-      {/* ================================================= */}
       {/* HEADER */}
-      {/* ================================================= */}
 
       <div>
         <h1 className="text-2xl font-bold text-slate-800">
@@ -894,9 +1415,7 @@ export function AssessmentsPage() {
         </p>
       </div>
 
-      {/* ================================================= */}
       {/* CONTROLS */}
-      {/* ================================================= */}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
 
@@ -915,6 +1434,7 @@ export function AssessmentsPage() {
                 setClassId(
                   event.target.value
                 );
+
                 setSaved(false);
               }}
               className="form-select"
@@ -926,8 +1446,12 @@ export function AssessmentsPage() {
               {classes.map(
                 (classRoom) => (
                   <option
-                    key={classRoom.id}
-                    value={classRoom.id}
+                    key={
+                      classRoom.id
+                    }
+                    value={
+                      classRoom.id
+                    }
                   >
                     {classRoom.name}
                   </option>
@@ -944,9 +1468,10 @@ export function AssessmentsPage() {
             </span>
 
             <input
-              value={academicYear}
+              value={
+                academicYear
+              }
               readOnly
-              placeholder="Select a class"
               className="form-input bg-slate-50"
             />
           </label>
@@ -964,17 +1489,18 @@ export function AssessmentsPage() {
                 setTerm(
                   event.target.value as Term
                 );
+
                 setSaved(false);
               }}
               className="form-select"
             >
               {TERMS.map(
-                (currentTerm) => (
+                (item) => (
                   <option
-                    key={currentTerm}
-                    value={currentTerm}
+                    key={item}
+                    value={item}
                   >
-                    {currentTerm}
+                    {item}
                   </option>
                 )
               )}
@@ -989,7 +1515,9 @@ export function AssessmentsPage() {
             </span>
 
             <select
-              value={assessmentName}
+              value={
+                assessmentName
+              }
               onChange={(event) => {
                 setAssessmentName(
                   event.target
@@ -1001,12 +1529,16 @@ export function AssessmentsPage() {
               className="form-select"
             >
               {ASSESSMENTS.map(
-                (assessment) => (
+                (item) => (
                   <option
-                    key={assessment.name}
-                    value={assessment.name}
+                    key={
+                      item.name
+                    }
+                    value={
+                      item.name
+                    }
                   >
-                    {assessment.name}
+                    {item.name}
                   </option>
                 )
               )}
@@ -1031,6 +1563,7 @@ export function AssessmentsPage() {
                 setDate(
                   event.target.value
                 );
+
                 setSaved(false);
               }}
               className="form-input"
@@ -1041,7 +1574,7 @@ export function AssessmentsPage() {
 
         {/* SELECTED ASSESSMENT */}
 
-        <div className="mt-4 flex items-center gap-3 rounded-lg bg-slate-50 px-4 py-3">
+        <div className="mt-4 flex items-center rounded-lg bg-slate-50 px-4 py-3">
 
           <div>
             <p className="text-xs font-medium text-slate-500">
@@ -1049,33 +1582,29 @@ export function AssessmentsPage() {
             </p>
 
             <p className="font-semibold text-slate-800">
-              {term} · {assessmentName}
+              {term} ·{' '}
+              {assessmentName}
             </p>
           </div>
 
-          <div className="ml-auto">
-            <span className="rounded-full bg-sky-100 px-3 py-1 text-sm font-semibold text-sky-700">
-              /{maxScore}
-            </span>
-          </div>
+          <span className="ml-auto rounded-full bg-sky-100 px-3 py-1 text-sm font-semibold text-sky-700">
+            /{maxScore}
+          </span>
 
         </div>
 
       </div>
 
-      {/* ================================================= */}
-      {/* STUDENTS */}
-      {/* ================================================= */}
+      {/* ACTIONS */}
 
       {classId &&
         classStudents.length > 0 && (
           <>
 
-            {/* SAVE BAR */}
-
             <div className="flex items-center gap-3">
 
               <button
+                type="button"
                 onClick={save}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-sky-700"
               >
@@ -1086,6 +1615,16 @@ export function AssessmentsPage() {
                   : 'Save Assessment'}
               </button>
 
+              <button
+                type="button"
+                onClick={exportPDF}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                <Download size={16} />
+
+                Export PDF
+              </button>
+
               {saved && (
                 <span className="text-sm font-medium text-emerald-600">
                   Saved!
@@ -1094,9 +1633,9 @@ export function AssessmentsPage() {
 
             </div>
 
-            {/* ================================================= */}
-            {/* INTEGRATED ACTIVITIES */}
-            {/* ================================================= */}
+            {/* =================================================
+                INTEGRATED ACTIVITIES
+                ================================================= */}
 
             {isIntegrated ? (
 
@@ -1108,31 +1647,31 @@ export function AssessmentsPage() {
 
                     <tr>
 
-                      <th className="px-4 py-3 font-semibold">
-                        Student ID
+                      <th className="px-4 py-3">
+                        Massar Code
                       </th>
 
-                      <th className="px-4 py-3 font-semibold">
+                      <th className="px-4 py-3">
                         Name
                       </th>
 
-                      <th className="px-4 py-3 font-semibold">
+                      <th className="px-4 py-3">
                         Discipline /5
                       </th>
 
-                      <th className="px-4 py-3 font-semibold">
+                      <th className="px-4 py-3">
                         Participation /5
                       </th>
 
-                      <th className="px-4 py-3 font-semibold">
+                      <th className="px-4 py-3">
                         Copybook /5
                       </th>
 
-                      <th className="px-4 py-3 font-semibold">
+                      <th className="px-4 py-3">
                         Projects /5
                       </th>
 
-                      <th className="px-4 py-3 font-semibold">
+                      <th className="px-4 py-3 font-bold">
                         Total /20
                       </th>
 
@@ -1151,14 +1690,34 @@ export function AssessmentsPage() {
 
                         return (
                           <tr
-                            key={student.id}
+                            key={
+                              student.id
+                            }
                             className="hover:bg-slate-50/60"
                           >
 
-                            {/* ID */}
+                            {/* MASSAR CODE */}
 
-                            <td className="px-4 py-3 font-medium text-slate-700">
-                              {student.id}
+                            <td className="px-4 py-3">
+
+                              <input
+                                type="text"
+                                value={
+                                  student.massarCode ??
+                                  ''
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  updateMassarCode(
+                                    student.id,
+                                    event.target.value
+                                  )
+                                }
+                                placeholder="Massar Code"
+                                className="w-36 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+                              />
+
                             </td>
 
                             {/* NAME */}
@@ -1167,16 +1726,9 @@ export function AssessmentsPage() {
                               {student.name}
                             </td>
 
-                            {/* FIELDS */}
+                            {/* INTEGRATED FIELDS */}
 
-                            {(
-                              [
-                                'discipline',
-                                'participation',
-                                'copybook',
-                                'projects',
-                              ] as const
-                            ).map(
+                            {INTEGRATED_FIELDS.map(
                               (field) => {
                                 const value =
                                   getIntegratedScore(
@@ -1185,42 +1737,42 @@ export function AssessmentsPage() {
                                   );
 
                                 const invalid =
-                                  isInvalidIntegratedScore(
+                                  invalidIntegrated(
                                     value
                                   );
 
                                 return (
                                   <td
-                                    key={field}
+                                    key={
+                                      field
+                                    }
                                     className="px-4 py-3"
                                   >
+
                                     <input
                                       type="number"
                                       min="0"
                                       max="5"
                                       step="0.5"
-                                      value={value}
-                                      onChange={(event) =>
+                                      value={
+                                        value
+                                      }
+                                      onChange={(
+                                        event
+                                      ) =>
                                         updateIntegratedScore(
                                           student.id,
                                           field,
-                                          event
-                                            .target
-                                            .value
+                                          event.target.value
                                         )
                                       }
-                                      className={`w-20 rounded-lg border px-2 py-1.5 text-sm outline-none transition focus:ring-2 ${
+                                      className={`w-20 rounded-lg border px-2 py-1.5 text-sm outline-none ${
                                         invalid
-                                          ? 'border-rose-500 bg-rose-50 text-rose-700 focus:border-rose-500 focus:ring-rose-500/20'
-                                          : 'border-slate-300 focus:border-sky-500 focus:ring-sky-500/20'
+                                          ? 'border-rose-500 bg-rose-50'
+                                          : 'border-slate-300'
                                       }`}
                                     />
 
-                                    {invalid && (
-                                      <p className="mt-1 text-xs font-medium text-rose-600">
-                                        Max: 5
-                                      </p>
-                                    )}
                                   </td>
                                 );
                               }
@@ -1228,19 +1780,11 @@ export function AssessmentsPage() {
 
                             {/* TOTAL */}
 
-                            <td className="px-4 py-3">
-                              <span
-                                className={`inline-flex min-w-[65px] justify-center rounded-lg px-2.5 py-1.5 font-semibold ${
-                                  total > 20
-                                    ? 'bg-rose-100 text-rose-700'
-                                    : total === 20
-                                      ? 'bg-emerald-100 text-emerald-700'
-                                      : 'bg-slate-100 text-slate-700'
-                                }`}
-                              >
-                                {total.toFixed(1)}
-                                /20
-                              </span>
+                            <td className="px-4 py-3 font-bold">
+                              {formatScore(
+                                total
+                              )}
+                              /20
                             </td>
 
                           </tr>
@@ -1256,9 +1800,9 @@ export function AssessmentsPage() {
 
             ) : (
 
-              /* ================================================= */
-              /* NORMAL ASSESSMENT */
-              /* ================================================= */
+              /* =================================================
+                 NORMAL ASSESSMENT
+                 ================================================= */
 
               <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
 
@@ -1268,19 +1812,19 @@ export function AssessmentsPage() {
 
                     <tr>
 
-                      <th className="px-4 py-3 font-semibold">
-                        Student ID
+                      <th className="px-4 py-3">
+                        Massar Code
                       </th>
 
-                      <th className="px-4 py-3 font-semibold">
+                      <th className="px-4 py-3">
                         Name
                       </th>
 
-                      <th className="px-4 py-3 font-semibold">
+                      <th className="px-4 py-3">
                         Score /{maxScore}
                       </th>
 
-                      <th className="px-4 py-3 font-semibold">
+                      <th className="px-4 py-3">
                         Percentage
                       </th>
 
@@ -1292,46 +1836,72 @@ export function AssessmentsPage() {
 
                     {classStudents.map(
                       (student) => {
-                        const rawScore =
+
+                        const raw =
                           draft[
                             student.id
                           ] ?? '';
 
                         const score =
-                          Number(rawScore);
+                          Number(raw);
 
                         const hasScore =
-                          rawScore.trim() !== '';
+                          raw.trim() !== '';
 
-                        const validNumber =
-                          Number.isFinite(score);
-
-                        const percentage =
-                          hasScore &&
-                          validNumber
-                            ? (score /
-                                maxScore) *
-                              100
-                            : null;
+                        const valid =
+                          Number.isFinite(
+                            score
+                          );
 
                         const invalid =
                           hasScore &&
                           (
-                            !validNumber ||
+                            !valid ||
                             score < 0 ||
                             score > maxScore
                           );
 
+                        const percentage =
+                          hasScore &&
+                          valid &&
+                          !invalid
+                            ? (
+                                (score /
+                                  maxScore) *
+                                100
+                              ).toFixed(1)
+                            : null;
+
                         return (
                           <tr
-                            key={student.id}
+                            key={
+                              student.id
+                            }
                             className="hover:bg-slate-50/60"
                           >
 
-                            {/* ID */}
+                            {/* MASSAR CODE */}
 
-                            <td className="px-4 py-3 font-medium text-slate-700">
-                              {student.id}
+                            <td className="px-4 py-3">
+
+                              <input
+                                type="text"
+                                value={
+                                  student.massarCode ??
+                                  ''
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  updateMassarCode(
+                                    student.id,
+                                    event.target.value
+                                  )
+                                }
+                                placeholder="Massar Code"
+                                className="w-36 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+                              />
+
                             </td>
 
                             {/* NAME */}
@@ -1347,25 +1917,30 @@ export function AssessmentsPage() {
                               <input
                                 type="number"
                                 min="0"
-                                max={maxScore}
+                                max={
+                                  maxScore
+                                }
                                 step="0.5"
-                                value={rawScore}
-                                onChange={(event) =>
+                                value={
+                                  raw
+                                }
+                                onChange={(
+                                  event
+                                ) =>
                                   setScore(
                                     student.id,
-                                    event.target
-                                      .value
+                                    event.target.value
                                   )
                                 }
-                                className={`w-24 rounded-lg border px-2 py-1.5 text-sm outline-none transition focus:ring-2 ${
+                                className={`w-24 rounded-lg border px-2 py-1.5 text-sm outline-none ${
                                   invalid
-                                    ? 'border-rose-400 bg-rose-50 text-rose-700 focus:border-rose-500 focus:ring-rose-500/20'
-                                    : 'border-slate-300 focus:border-sky-500 focus:ring-sky-500/20'
+                                    ? 'border-rose-400 bg-rose-50'
+                                    : 'border-slate-300'
                                 }`}
                               />
 
                               {invalid && (
-                                <p className="mt-1 text-xs font-medium text-rose-600">
+                                <p className="mt-1 text-xs text-rose-600">
                                   Score must be between 0 and{' '}
                                   {maxScore}
                                 </p>
@@ -1376,14 +1951,10 @@ export function AssessmentsPage() {
                             {/* PERCENTAGE */}
 
                             <td className="px-4 py-3 text-slate-600">
-
                               {percentage !==
                               null
-                                ? `${percentage.toFixed(
-                                    1
-                                  )}%`
+                                ? `${percentage}%`
                                 : '-'}
-
                             </td>
 
                           </tr>
@@ -1396,14 +1967,13 @@ export function AssessmentsPage() {
                 </table>
 
               </div>
+
             )}
 
           </>
         )}
 
-      {/* ================================================= */}
-      {/* NO STUDENTS */}
-      {/* ================================================= */}
+      {/* EMPTY CLASS */}
 
       {classId &&
         classStudents.length === 0 && (
@@ -1413,14 +1983,12 @@ export function AssessmentsPage() {
           </p>
         )}
 
-      {/* ================================================= */}
       {/* NO CLASS */}
-      {/* ================================================= */}
 
       {!classId && (
         <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          Select a class to enter assessment
-          grades.
+          Select a class to enter
+          assessment grades.
         </p>
       )}
 
