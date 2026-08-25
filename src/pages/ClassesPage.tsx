@@ -80,6 +80,10 @@ export function ClassesPage() {
     const grade = form.grade.trim();
     const academicYear = form.academicYear.trim();
 
+    /* =================================================
+       VALIDATION
+       ================================================= */
+
     if (!name) {
       alert('Class Name is required.');
       return;
@@ -96,7 +100,22 @@ export function ClassesPage() {
     }
 
     /* =================================================
-       CHECK DUPLICATE CLASS NAME
+       CHECK DUPLICATE
+
+       A class is considered duplicate ONLY when:
+       - Class Name is the same
+       - Level is the same
+       - Academic Year is the same
+
+       Example:
+
+       1APIC / 1 / 2026/2027   ✅
+       2APIC / 1 / 2026/2027   ✅
+
+       But:
+
+       1APIC / 1 / 2026/2027   ❌
+       1APIC / 1 / 2026/2027   ❌
        ================================================= */
 
     const duplicate = data.classes.some(
@@ -104,19 +123,21 @@ export function ClassesPage() {
         classRoom.id !== editing?.id &&
         classRoom.name.trim().toLowerCase() ===
           name.toLowerCase() &&
+        classRoom.grade.trim().toLowerCase() ===
+          grade.toLowerCase() &&
         classRoom.academicYear.trim().toLowerCase() ===
           academicYear.toLowerCase()
     );
 
     if (duplicate) {
       alert(
-        `Class "${name}" already exists for ${academicYear}.`
+        `Class "${name}" already exists in ${grade} for ${academicYear}.`
       );
       return;
     }
 
     /* =================================================
-       EDIT
+       EDIT EXISTING CLASS
        ================================================= */
 
     if (editing) {
@@ -143,7 +164,7 @@ export function ClassesPage() {
     }
 
     /* =================================================
-       ADD
+       ADD NEW CLASS
        ================================================= */
 
     const newClass: ClassRoom = {
@@ -285,6 +306,10 @@ export function ClassesPage() {
       }
     );
   });
+
+  /* =====================================================
+     RENDER
+     ===================================================== */
 
   return (
     <div>
@@ -515,7 +540,7 @@ export function ClassesPage() {
                   })
                 );
               }}
-              placeholder="Example: 1APIC-11"
+              placeholder="Example: 1"
               className="form-input"
             />
           </Field>
