@@ -1,8 +1,6 @@
 import type { AppData } from '@/types';
 
-const KEY = 'teacher-mgmt-data';
-
-const EMPTY: AppData = {
+export const EMPTY_DATA: AppData = {
   schoolName: '',
   teacherName: '',
   classes: [],
@@ -12,81 +10,28 @@ const EMPTY: AppData = {
   integratedActivities: [],
 };
 
-/*
- * =====================================================
- * LOAD DATA
- * =====================================================
- */
-
 export function loadData(): AppData {
-  try {
-    const raw = localStorage.getItem(KEY);
-
-    if (!raw) {
-      return structuredClone(EMPTY);
-    }
-
-    const parsed = JSON.parse(raw) as Partial<AppData>;
-
-    return {
-      schoolName: parsed.schoolName ?? '',
-      teacherName: parsed.teacherName ?? '',
-
-      classes: parsed.classes ?? [],
-      students: parsed.students ?? [],
-      attendance: parsed.attendance ?? [],
-      assessments: parsed.assessments ?? [],
-
-      integratedActivities:
-        parsed.integratedActivities ?? [],
-    };
-  } catch {
-    return structuredClone(EMPTY);
-  }
+  return structuredClone(EMPTY_DATA);
 }
 
-/*
- * =====================================================
- * SAVE DATA
- * =====================================================
- */
-
-export function saveData(data: AppData): void {
-  localStorage.setItem(
-    KEY,
-    JSON.stringify(data)
-  );
+export function saveData(_data: AppData): void {
+  // Data is now stored in Supabase.
 }
-
-/*
- * =====================================================
- * CLEAR DATA
- * =====================================================
- */
 
 export function clearData(): void {
-  localStorage.removeItem(KEY);
+  // Data is now stored in Supabase.
 }
 
-/*
- * =====================================================
- * ID GENERATORS
- * =====================================================
- */
-
-function nextSeq(
-  existing: string[],
-  pad: number
-): number {
+function nextSeq(existing: string[]): number {
   let max = 0;
 
   for (const id of existing) {
-    const m = id.match(/(\d+)\s*$/);
+    const match = id.match(/(\d+)\s*$/);
 
-    if (m) {
+    if (match) {
       max = Math.max(
         max,
-        parseInt(m[1], 10)
+        parseInt(match[1], 10)
       );
     }
   }
@@ -97,41 +42,32 @@ function nextSeq(
 export function nextStudentId(
   students: { id: string }[]
 ): string {
-  const n = nextSeq(
-    students.map((s) => s.id),
-    3
-  );
-
   return (
     'STU' +
-    String(n).padStart(3, '0')
+    String(
+      nextSeq(students.map((s) => s.id))
+    ).padStart(3, '0')
   );
 }
 
 export function nextAttendanceId(
   records: { id: string }[]
 ): string {
-  const n = nextSeq(
-    records.map((r) => r.id),
-    4
-  );
-
   return (
     'ATT' +
-    String(n).padStart(4, '0')
+    String(
+      nextSeq(records.map((r) => r.id))
+    ).padStart(4, '0')
   );
 }
 
 export function nextAssessmentId(
   records: { id: string }[]
 ): string {
-  const n = nextSeq(
-    records.map((r) => r.id),
-    4
-  );
-
   return (
     'ASM' +
-    String(n).padStart(4, '0')
+    String(
+      nextSeq(records.map((r) => r.id))
+    ).padStart(4, '0')
   );
 }

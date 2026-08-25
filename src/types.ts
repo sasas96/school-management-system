@@ -1,5 +1,9 @@
 export type Gender = 'Male' | 'Female';
 
+/* =====================================================
+   CLASS
+===================================================== */
+
 export interface ClassRoom {
   id: string;
   name: string;
@@ -8,8 +12,8 @@ export interface ClassRoom {
 }
 
 /* =====================================================
-   EDUCATIONAL OPTIONS
-   ===================================================== */
+   STUDENT EDUCATIONAL TYPES
+===================================================== */
 
 export type LearningStyle =
   | 'Visual'
@@ -26,11 +30,10 @@ export type LearningPreference =
   | 'Mixed';
 
 export type ParticipationLevel =
-  | 'Very active'
   | 'Active'
-  | 'Sometimes participates'
-  | 'Rarely participates'
-  | 'Passive';
+  | 'Average'
+  | 'Quiet'
+  | 'Needs encouragement';
 
 export type LearningBehaviour =
   | 'Independent'
@@ -40,61 +43,124 @@ export type LearningBehaviour =
   | 'Mixed';
 
 export type MotivationLevel =
-  | 'Highly motivated'
-  | 'Motivated'
-  | 'Inconsistent'
-  | 'Low motivation'
+  | 'High'
+  | 'Good'
+  | 'Average'
+  | 'Low'
   | 'Unknown';
 
 export type SkillLevel =
   | 'Strong'
   | 'Good'
   | 'Developing'
-  | 'Needs support'
+  | 'Needs Support'
   | 'Not assessed';
+
+export type FamilySupport =
+  | 'Strong'
+  | 'Good'
+  | 'Limited'
+  | 'Unknown';
+
+export type HomeLearningEnvironment =
+  | 'Supportive'
+  | 'Adequate'
+  | 'Limited'
+  | 'Unknown';
+
+export type ResourceAccess =
+  | 'Good'
+  | 'Limited'
+  | 'None'
+  | 'Unknown';
+
+export type DifficultyLevel =
+  | 'No issue'
+  | 'Sometimes difficult'
+  | 'Significant difficulty'
+  | 'Unknown';
+
+export type AttendancePattern =
+  | 'Regular'
+  | 'Occasional absences'
+  | 'Frequent absences'
+  | 'Unknown';
+
+export type AccommodationStatus =
+  | 'None'
+  | 'Not known'
+  | 'Yes';
+
+/* =====================================================
+   CLASSROOM OBSERVATION
+===================================================== */
 
 export type ClassroomBehaviour =
   | 'Excellent'
   | 'Good'
-  | 'Generally good'
-  | 'Needs monitoring'
-  | 'Frequent difficulties';
+  | 'Average'
+  | 'Needs improvement';
 
 export type AttentionLevel =
   | 'Focused'
   | 'Usually focused'
-  | 'Easily distracted'
-  | 'Needs frequent reminders';
+  | 'Sometimes distracted'
+  | 'Frequently distracted';
+
+export type HomeworkCompletion =
+  | 'Always'
+  | 'Usually'
+  | 'Sometimes'
+  | 'Rarely';
+
+export type PunctualityLevel =
+  | 'Always on time'
+  | 'Usually on time'
+  | 'Sometimes late'
+  | 'Frequently late';
+
+export type PeerInteraction =
+  | 'Excellent'
+  | 'Good'
+  | 'Average'
+  | 'Needs support';
+
+export type TeacherInteraction =
+  | 'Excellent'
+  | 'Good'
+  | 'Average'
+  | 'Needs encouragement';
+
+/* =====================================================
+   STUDENT SUPPORT
+===================================================== */
 
 export type FamilyFollowUp =
-  | 'Good'
+  | 'Not needed'
   | 'Occasional'
-  | 'Limited'
-  | 'Unknown';
+  | 'Regular'
+  | 'Required';
 
 export type SupportRequired =
   | 'None'
-  | 'Academic support'
-  | 'Behavioural support'
-  | 'Individual attention'
-  | 'Parental follow-up'
-  | 'Regular monitoring';
+  | 'Academic'
+  | 'Behavioural'
+  | 'Social'
+  | 'Multiple areas';
 
 export type HealthConsideration =
   | 'None'
-  | 'Vision'
-  | 'Hearing'
-  | 'Mobility'
-  | 'Medical consideration'
-  | 'Other'
-  | 'Not provided';
+  | 'Known consideration'
+  | 'Requires attention';
 
 /* =====================================================
    STUDENT
-   ===================================================== */
+===================================================== */
 
 export interface Student {
   id: string;
+
+  /* Basic information */
   massarCode: string;
   name: string;
   nameAr?: string;
@@ -102,69 +168,91 @@ export interface Student {
   classId: string;
   gender: Gender;
 
-  /*
-   * EDUCATIONAL PROFILE
-   */
-
+  /* Educational profile */
   learningStyle?: LearningStyle;
   learningPreference?: LearningPreference;
   participationLevel?: ParticipationLevel;
   learningBehaviour?: LearningBehaviour;
   motivationLevel?: MotivationLevel;
 
-  learningNeeds?: string;
   strengths?: string;
   areasForImprovement?: string;
+  learningNeeds?: string;
+  educationalGoals?: string;
+  educationalNotes?: string;
 
-  /*
-   * CLASSROOM BEHAVIOUR
-   */
-
-  classroomBehaviour?: ClassroomBehaviour;
-  attentionLevel?: AttentionLevel;
-
-  /*
-   * LANGUAGE & SKILLS
-   */
+  /* Language */
+  firstLanguage?: string;
+  otherLanguages?: string;
 
   englishLevel?: SkillLevel;
   speakingLevel?: SkillLevel;
   listeningLevel?: SkillLevel;
   readingLevel?: SkillLevel;
   writingLevel?: SkillLevel;
+  vocabularyLevel?: SkillLevel;
+  grammarLevel?: SkillLevel;
+  pronunciationLevel?: SkillLevel;
 
-  /*
-   * INTERESTS
-   */
+  /* Classroom behaviour */
+  classroomBehaviour?: ClassroomBehaviour;
+  attentionLevel?: AttentionLevel;
+  homeworkCompletion?: HomeworkCompletion;
+  punctuality?: PunctualityLevel;
+  peerInteraction?: PeerInteraction;
+  teacherInteraction?: TeacherInteraction;
+  behaviourNotes?: string;
 
-  interests?: string;
-  favouriteTopics?: string;
+  /* Attendance */
+  attendancePattern?: AttendancePattern;
+  frequentLateness?: boolean;
+  engagementLevel?: ParticipationLevel;
+  absenceReason?: string;
+  engagementNotes?: string;
 
-  /*
-   * SOCIAL / FAMILY
-   */
+  /* Social / family context */
+  livingArrangement?: string;
+  familySupport?: FamilySupport;
+  homeLearningEnvironment?: HomeLearningEnvironment;
+  accessToLearningResources?: ResourceAccess;
+  transportationDifficulty?: DifficultyLevel;
 
   familyFollowUp?: FamilyFollowUp;
-  socialSupport?: SupportRequired;
+  socialSupport?: string;
+  socialEducationalNotes?: string;
 
-  /*
-   * HEALTH / SUPPORT
-   */
-
+  /* Health / educational support */
   healthConsideration?: HealthConsideration;
   healthNotes?: string;
+  specialEducationalNeeds?: AccommodationStatus;
+  learningAccommodationNeeded?: AccommodationStatus;
+  accessibilityNeeds?: string;
+
   supportRequired?: SupportRequired;
+  supportNotes?: string;
 
-  /*
-   * TEACHER NOTES
-   */
+  /* Interests */
+  interests?: string;
+  hobbies?: string;
+  favouriteTopics?: string;
+  motivationFactors?: string;
+  careerInterests?: string;
+  preferredActivities?: string;
 
+  /* Teacher support plan */
+  recommendedSupport?: string;
+  interventionNeeded?: string;
+  effectiveStrategies?: string;
+  strategiesToAvoid?: string;
+
+  shortTermGoal?: string;
+  followUpDate?: string;
   teacherNotes?: string;
 }
 
 /* =====================================================
    ATTENDANCE
-   ===================================================== */
+===================================================== */
 
 export type AttendanceStatus =
   | 'Present'
@@ -181,7 +269,7 @@ export interface AttendanceRecord {
 
 /* =====================================================
    TERMS
-   ===================================================== */
+===================================================== */
 
 export type Term =
   | 'First Term'
@@ -189,7 +277,7 @@ export type Term =
 
 /* =====================================================
    ASSESSMENTS
-   ===================================================== */
+===================================================== */
 
 export type OfficialAssessment =
   | 'Quiz 1'
@@ -218,7 +306,7 @@ export interface AssessmentRecord {
 
 /* =====================================================
    INTEGRATED ACTIVITIES
-   ===================================================== */
+===================================================== */
 
 export interface IntegratedActivityRecord {
   id: string;
@@ -227,16 +315,18 @@ export interface IntegratedActivityRecord {
   academicYear: string;
   term: Term;
   date: string;
+
   discipline: number;
   participation: number;
   copybook: number;
   projects: number;
+
   total: number;
 }
 
 /* =====================================================
    APP DATA
-   ===================================================== */
+===================================================== */
 
 export interface AppData {
   schoolName?: string;
@@ -244,14 +334,15 @@ export interface AppData {
 
   classes: ClassRoom[];
   students: Student[];
+
   attendance: AttendanceRecord[];
   assessments: AssessmentRecord[];
   integratedActivities: IntegratedActivityRecord[];
 }
 
 /* =====================================================
-   STUDENT SUMMARY
-   ===================================================== */
+   STUDENT ANALYTICS
+===================================================== */
 
 export type Progress =
   | 'Improving'
@@ -266,13 +357,18 @@ export type Status =
 
 export interface StudentSummary {
   totalSessions: number;
+
   present: number;
   late: number;
   absent: number;
+
   attendanceRate: number;
   attendanceConcern: boolean;
+
   averageScore: number | null;
+
   progress: Progress;
   progressConcern: boolean;
+
   status: Status;
 }
