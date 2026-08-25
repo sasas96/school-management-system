@@ -1,77 +1,70 @@
+import { useMemo, useRef, useState } from 'react';
 import {
-  useMemo,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type ReactNode,
-} from 'react';
-
+  Plus,
+  Search,
+  Users,
+  X,
+  Save,
+  Edit,
+  Trash2,
+  Upload,
+  FileSpreadsheet,
+} from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 import { useData } from '@/store/DataContext';
 
 import type {
-  Gender,
   Student,
-  ClassRoom,
   LearningStyle,
   LearningPreference,
   ParticipationLevel,
   LearningBehaviour,
   MotivationLevel,
   SkillLevel,
+  FamilySupport,
+  HomeLearningEnvironment,
+  ResourceAccess,
+  DifficultyLevel,
+  AttendancePattern,
+  AccommodationStatus,
+  ClassroomBehaviour,
+  AttentionLevel,
+  HomeworkCompletion,
+  PunctualityLevel,
+  PeerInteraction,
+  TeacherInteraction,
+  FamilyFollowUp,
+  SupportRequired,
+  HealthConsideration,
 } from '@/types';
 
-import { nextStudentId } from '@/lib/storage';
-
-import {
-  summarizeStudent,
-  fmtPct,
-} from '@/lib/calculations';
-
-import { Modal } from '@/components/Modal';
-import { Field } from '@/pages/ClassesPage';
-import { StatusBadge } from '@/components/Badges';
-import { StudentProfile } from '@/pages/StudentProfile';
-
-import {
-  Plus,
-  Pencil,
-  Trash2,
-  Search,
-  Upload,
-  FileSpreadsheet,
-  X,
-} from 'lucide-react';
-
 /* =====================================================
-   EMPTY STUDENT
+   DEFAULT STUDENT
 ===================================================== */
 
-const emptyStudent: Omit<Student, 'id'> = {
-  /* Basic information */
+const emptyStudent = (): Partial<Student> => ({
+  massarCode: '',
   name: '',
   nameAr: '',
-  massarCode: '',
   dateOfBirth: '',
   classId: '',
-  gender: 'Male',
 
-  /* Educational profile */
   learningStyle: 'Not identified',
   learningPreference: 'Mixed',
   participationLevel: 'Average',
   learningBehaviour: 'Mixed',
   motivationLevel: 'Unknown',
+
   strengths: '',
   areasForImprovement: '',
   learningNeeds: '',
   educationalGoals: '',
   educationalNotes: '',
 
-  /* Language */
-  firstLanguage: '',
+  firstLanguage: 'Arabic',
   otherLanguages: '',
+
   englishLevel: 'Not assessed',
   speakingLevel: 'Not assessed',
   listeningLevel: 'Not assessed',
@@ -81,8 +74,7 @@ const emptyStudent: Omit<Student, 'id'> = {
   grammarLevel: 'Not assessed',
   pronunciationLevel: 'Not assessed',
 
-  /* Classroom behaviour */
-  classroomBehaviour: 'Average',
+  classroomBehaviour: 'Good',
   attentionLevel: 'Usually focused',
   homeworkCompletion: 'Usually',
   punctuality: 'Usually on time',
@@ -90,24 +82,21 @@ const emptyStudent: Omit<Student, 'id'> = {
   teacherInteraction: 'Good',
   behaviourNotes: '',
 
-  /* Attendance */
   attendancePattern: 'Unknown',
   frequentLateness: false,
   engagementLevel: 'Average',
   absenceReason: '',
   engagementNotes: '',
 
-  /* Social / family context */
   livingArrangement: '',
   familySupport: 'Unknown',
   homeLearningEnvironment: 'Unknown',
   accessToLearningResources: 'Unknown',
-  transportationDifficulty: 'Unknown',
+  transportationDifficulty: 'No issue',
   familyFollowUp: 'Not needed',
   socialSupport: '',
   socialEducationalNotes: '',
 
-  /* Health / educational support */
   healthConsideration: 'None',
   healthNotes: '',
   specialEducationalNeeds: 'Not known',
@@ -116,7 +105,6 @@ const emptyStudent: Omit<Student, 'id'> = {
   supportRequired: 'None',
   supportNotes: '',
 
-  /* Interests */
   interests: '',
   hobbies: '',
   favouriteTopics: '',
@@ -124,7 +112,6 @@ const emptyStudent: Omit<Student, 'id'> = {
   careerInterests: '',
   preferredActivities: '',
 
-  /* Teacher support plan */
   recommendedSupport: '',
   interventionNeeded: '',
   effectiveStrategies: '',
@@ -132,71 +119,240 @@ const emptyStudent: Omit<Student, 'id'> = {
   shortTermGoal: '',
   followUpDate: '',
   teacherNotes: '',
-};
+});
 
 /* =====================================================
    IMPORT TYPES
 ===================================================== */
 
-interface ImportStudent {
+interface ImportedStudent {
   massarCode: string;
   nameAr: string;
   dateOfBirth: string;
 }
 
-interface HeaderIndexes {
-  rowIndex: number;
-  massarIndex: number;
-  nameIndex: number;
-  birthIndex: number;
+/* =====================================================
+   TEXT HELPERS
+===================================================== */
+
+function cleanCell(value: unknown): string {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return '';
+  }
+
+  return String(value).trim();
 }
 
 /* =====================================================
-   EXCEL HELPERS
+   REPAIR MOJIBAKE
+===================================================== */
+
+function repairMojibake(value: string): string {
+  if (!value) {
+    return '';
+  }
+
+  const suspicious =
+    /[ÃÂÐÑØÙÚÛÜÝÞßÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞ]/;
+
+  if (!suspicious.test(value)) {
+    return value;
+  }
+
+  try {
+    const bytes = new Uint8Array(
+      Array.from(value).map(
+        (char) =>
+          char.charCodeAt(0) & 0xff
+      )
+    );
+
+    const decoded = new TextDecoder(
+      'utf-8'
+    ).decode(bytes);
+
+    if (
+      decoded &&
+      !decoded.includes('\ufffd') &&
+      /[\u0600-\u06ff]/.test(decoded)
+    ) {
+      return decoded;
+    }
+  } catch {
+    // Keep original value.
+  }
+
+  return value;
+}
+
+/* =====================================================
+   HEADER NORMALIZATION
 ===================================================== */
 
 function normalizeHeader(value: unknown): string {
-  return String(value ?? '')
-    .replace(/\u00A0/g, ' ')
-    .replace(/\u2007/g, ' ')
-    .replace(/\u202F/g, ' ')
+  return repairMojibake(
+    cleanCell(value)
+  )
+    .toLowerCase()
+    .replace(/\u00a0/g, ' ')
     .replace(/\s+/g, ' ')
-    .replace(/\u0640/g, '')
-    .trim()
-    .toLowerCase();
+    .trim();
 }
 
-function isMassarHeader(value: unknown): boolean {
-  const header = normalizeHeader(value);
+/* =====================================================
+   HEADER MATCH
+===================================================== */
 
-  return (
-    header.includes('رقم التلميذ') ||
-    header.includes('massar')
+function headerMatches(
+  value: unknown,
+  possibleNames: string[]
+): boolean {
+  const normalized = normalizeHeader(value);
+
+  if (!normalized) {
+    return false;
+  }
+
+  return possibleNames.some(
+    (name) =>
+      normalized === normalizeHeader(name)
   );
 }
 
-function isNameHeader(value: unknown): boolean {
-  const header = normalizeHeader(value);
+/* =====================================================
+   FIND STUDENT HEADER ROW
+===================================================== */
 
-  return (
-    header.includes('إسم التلميذ') ||
-    header.includes('اسم التلميذ') ||
-    header.includes('student name')
+function findStudentHeaderRow(
+  worksheet: XLSX.WorkSheet
+): {
+  rowIndex: number;
+  massarColumn: number;
+  nameColumn: number;
+  dobColumn: number;
+} | null {
+  const range = XLSX.utils.decode_range(
+    worksheet['!ref'] || 'A1:A1'
   );
+
+  const maxRows = Math.min(
+    range.e.r,
+    30
+  );
+
+  const massarHeaders = [
+    'رقم التلميذ',
+    'رقم التلميذة',
+    'رقم التلميذ(ة)',
+    'رقم مسار',
+    'رمز مسار',
+    'Massar Code',
+    'Massar',
+    'Code Massar',
+    'Code',
+  ];
+
+  const nameHeaders = [
+    'إسم التلميذ',
+    'اسم التلميذ',
+    'إسم التلميذة',
+    'اسم التلميذة',
+    'إسم التلميذ(ة)',
+    'اسم التلميذ(ة)',
+    'الاسم بالعربية',
+    'الاسم العربي',
+    'Arabic Name',
+    'Name Arabic',
+    'Student Arabic Name',
+  ];
+
+  const dobHeaders = [
+    'تاريخ الإزدياد',
+    'تاريخ الازدياد',
+    'تاريخ الميلاد',
+    'Date of Birth',
+    'Birth Date',
+    'DOB',
+    'Date naissance',
+  ];
+
+  for (
+    let rowIndex = range.s.r;
+    rowIndex <= maxRows;
+    rowIndex++
+  ) {
+    let massarColumn = -1;
+    let nameColumn = -1;
+    let dobColumn = -1;
+
+    for (
+      let columnIndex = range.s.c;
+      columnIndex <= range.e.c;
+      columnIndex++
+    ) {
+      const address =
+        XLSX.utils.encode_cell({
+          r: rowIndex,
+          c: columnIndex,
+        });
+
+      const value =
+        worksheet[address]?.v;
+
+      if (
+        headerMatches(
+          value,
+          massarHeaders
+        )
+      ) {
+        massarColumn = columnIndex;
+      }
+
+      if (
+        headerMatches(
+          value,
+          nameHeaders
+        )
+      ) {
+        nameColumn = columnIndex;
+      }
+
+      if (
+        headerMatches(
+          value,
+          dobHeaders
+        )
+      ) {
+        dobColumn = columnIndex;
+      }
+    }
+
+    if (
+      massarColumn !== -1 &&
+      nameColumn !== -1
+    ) {
+      return {
+        rowIndex,
+        massarColumn,
+        nameColumn,
+        dobColumn,
+      };
+    }
+  }
+
+  return null;
 }
 
-function isBirthHeader(value: unknown): boolean {
-  const header = normalizeHeader(value);
+/* =====================================================
+   EXCEL DATE → ISO
+===================================================== */
 
-  return (
-    header.includes('تاريخ الإزدياد') ||
-    header.includes('تاريخ الازدياد') ||
-    header.includes('date of birth') ||
-    header.includes('birth')
-  );
-}
-
-function excelDateToString(value: unknown): string {
+function excelDateToISO(
+  value: unknown
+): string {
   if (
     value === null ||
     value === undefined ||
@@ -206,39 +362,63 @@ function excelDateToString(value: unknown): string {
   }
 
   if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) {
-      return '';
-    }
+    const year = value.getFullYear();
 
-    return [
-      value.getFullYear(),
-      String(value.getMonth() + 1).padStart(2, '0'),
-      String(value.getDate()).padStart(2, '0'),
-    ].join('-');
+    const month = String(
+      value.getMonth() + 1
+    ).padStart(2, '0');
+
+    const day = String(
+      value.getDate()
+    ).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
   }
 
-  const raw = String(value).trim();
+  if (typeof value === 'number') {
+    try {
+      const date =
+        XLSX.SSF.parse_date_code(
+          value
+        );
 
-  if (!raw) {
+      if (date) {
+        const year = String(
+          date.y
+        ).padStart(4, '0');
+
+        const month = String(
+          date.m
+        ).padStart(2, '0');
+
+        const day = String(
+          date.d
+        ).padStart(2, '0');
+
+        return `${year}-${month}-${day}`;
+      }
+    } catch {
+      // Continue.
+    }
+  }
+
+  const text = cleanCell(value);
+
+  if (!text) {
     return '';
   }
 
-  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(raw)) {
-    const [year, month, day] = raw.split('-');
-
-    return [
-      year,
-      month.padStart(2, '0'),
-      day.padStart(2, '0'),
-    ].join('-');
-  }
-
-  const slashMatch = raw.match(
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
+  const isoMatch = text.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})$/
   );
 
-  if (slashMatch) {
-    const [, day, month, year] = slashMatch;
+  if (isoMatch) {
+    const [
+      ,
+      year,
+      month,
+      day,
+    ] = isoMatch;
 
     return `${year}-${month.padStart(
       2,
@@ -246,12 +426,17 @@ function excelDateToString(value: unknown): string {
     )}-${day.padStart(2, '0')}`;
   }
 
-  const dashMatch = raw.match(
+  const dashMatch = text.match(
     /^(\d{1,2})-(\d{1,2})-(\d{4})$/
   );
 
   if (dashMatch) {
-    const [, day, month, year] = dashMatch;
+    const [
+      ,
+      day,
+      month,
+      year,
+    ] = dashMatch;
 
     return `${year}-${month.padStart(
       2,
@@ -259,2117 +444,2650 @@ function excelDateToString(value: unknown): string {
     )}-${day.padStart(2, '0')}`;
   }
 
-  const numeric = Number(raw);
+  const slashMatch = text.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
+  );
 
-  if (
-    Number.isFinite(numeric) &&
-    numeric > 20000 &&
-    numeric < 60000
-  ) {
-    const date = XLSX.SSF.parse_date_code(numeric);
+  if (slashMatch) {
+    const [
+      ,
+      day,
+      month,
+      year,
+    ] = slashMatch;
 
-    if (date) {
-      return `${date.y}-${String(date.m).padStart(
-        2,
-        '0'
-      )}-${String(date.d).padStart(2, '0')}`;
-    }
+    return `${year}-${month.padStart(
+      2,
+      '0'
+    )}-${day.padStart(2, '0')}`;
   }
 
-  return raw;
-}
-
-function findHeaderRow(
-  rows: unknown[][]
-): HeaderIndexes | null {
-  for (
-    let rowIndex = 0;
-    rowIndex < Math.min(rows.length, 30);
-    rowIndex++
-  ) {
-    const row = rows[rowIndex] ?? [];
-
-    let massarIndex = -1;
-    let nameIndex = -1;
-    let birthIndex = -1;
-
-    row.forEach((cell, index) => {
-      if (
-        massarIndex === -1 &&
-        isMassarHeader(cell)
-      ) {
-        massarIndex = index;
-      }
-
-      if (
-        nameIndex === -1 &&
-        isNameHeader(cell)
-      ) {
-        nameIndex = index;
-      }
-
-      if (
-        birthIndex === -1 &&
-        isBirthHeader(cell)
-      ) {
-        birthIndex = index;
-      }
-    });
-
-    if (
-      massarIndex !== -1 &&
-      nameIndex !== -1
-    ) {
-      return {
-        rowIndex,
-        massarIndex,
-        nameIndex,
-        birthIndex,
-      };
-    }
-  }
-
-  return null;
+  return text;
 }
 
 /* =====================================================
-   PAGE
+   GET CELL
+===================================================== */
+
+function getCellValue(
+  worksheet: XLSX.WorkSheet,
+  row: number,
+  column: number
+): unknown {
+  const address =
+    XLSX.utils.encode_cell({
+      r: row,
+      c: column,
+    });
+
+  return worksheet[address]?.v;
+}
+
+/* =====================================================
+   COMPONENT
 ===================================================== */
 
 export function StudentsPage() {
   const {
     data,
-    setData,
+    addStudent,
+    updateStudent,
     deleteStudent,
   } = useData();
 
-  /* ===================================================
-     STUDENT MODAL
-  =================================================== */
+  const classes =
+    data.classes ?? [];
 
-  const [modalOpen, setModalOpen] = useState(false);
+  const students =
+    data.students ?? [];
 
-  const [editing, setEditing] =
-    useState<Student | null>(null);
+  const [
+    search,
+    setSearch,
+  ] = useState('');
 
-  const [form, setForm] =
-    useState<Student>({} as Student);
+  const [
+    selectedClass,
+    setSelectedClass,
+  ] = useState('');
 
-  /* ===================================================
-     FILTERS
-  =================================================== */
+  const [
+    showModal,
+    setShowModal,
+  ] = useState(false);
 
-  const [search, setSearch] = useState('');
-  const [classFilter, setClassFilter] = useState('');
+  const [
+    editingStudent,
+    setEditingStudent,
+  ] = useState<Student | null>(
+    null
+  );
 
-  /* ===================================================
-     PROFILE
-  =================================================== */
+  const [
+    form,
+    setForm,
+  ] = useState<Partial<Student>>(
+    emptyStudent()
+  );
 
-  const [profileId, setProfileId] =
-    useState<string | null>(null);
-
-  /* ===================================================
-     EXCEL IMPORT
-  =================================================== */
+  /* =====================================================
+     IMPORT STATE
+  ===================================================== */
 
   const fileInputRef =
-    useRef<HTMLInputElement | null>(null);
-
-  const [importOpen, setImportOpen] =
-    useState(false);
-
-  const [importStudents, setImportStudents] =
-    useState<ImportStudent[]>([]);
-
-  const [importClassId, setImportClassId] =
-    useState(data.classes?.[0]?.id ?? '');
-
-  const [importFileName, setImportFileName] =
-    useState('');
-
-  const [importError, setImportError] =
-    useState('');
-
-  const [importing, setImporting] =
-    useState(false);
-
-  /* ===================================================
-     CREATE CLASS
-  =================================================== */
-
-  const [createClassOpen, setCreateClassOpen] =
-    useState(false);
-
-  const [newClassGrade, setNewClassGrade] =
-    useState('1APIC');
-
-  const [newClassAcademicYear, setNewClassAcademicYear] =
-    useState('2026/2027');
-
-  const [newClassName, setNewClassName] =
-    useState('');
-
-  /* ===================================================
-     CLASS HELPERS
-  =================================================== */
-
-  const getClassName = (classId: string) => {
-    return (
-      data.classes.find(
-        (classRoom) => classRoom.id === classId
-      )?.name ?? '—'
-    );
-  };
-
-  const suggestClassId = () => {
-    const ids = new Set(
-      data.classes.map(
-        (classRoom) => classRoom.id
-      )
+    useRef<HTMLInputElement | null>(
+      null
     );
 
-    let number = 1;
+  const [
+    importOpen,
+    setImportOpen,
+  ] = useState(false);
 
-    while (
-      ids.has(
-        `C${String(number).padStart(2, '0')}`
-      )
-    ) {
-      number++;
-    }
+  const [
+    importing,
+    setImporting,
+  ] = useState(false);
 
-    return `C${String(number).padStart(2, '0')}`;
-  };
+  const [
+    importFileName,
+    setImportFileName,
+  ] = useState('');
 
-  /* ===================================================
-     FILTERED STUDENTS
-  =================================================== */
+  const [
+    importError,
+    setImportError,
+  ] = useState('');
 
-  const filteredStudents = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  const [
+    importStudents,
+    setImportStudents,
+  ] = useState<
+    ImportedStudent[]
+  >([]);
 
-    return data.students.filter((student) => {
-      if (
-        classFilter &&
-        student.classId !== classFilter
-      ) {
-        return false;
-      }
+  const [
+    importClassId,
+    setImportClassId,
+  ] = useState('');
 
-      if (!query) {
-        return true;
-      }
+  /* =====================================================
+     FILTER
+  ===================================================== */
 
-      return (
-        (student.nameAr ?? '')
-          .toLowerCase()
-          .includes(query) ||
-        (student.massarCode ?? '')
-          .toLowerCase()
-          .includes(query) ||
-        student.id
-          .toLowerCase()
-          .includes(query)
+  const filteredStudents =
+    useMemo(() => {
+      const query =
+        search
+          .trim()
+          .toLowerCase();
+
+      return students.filter(
+        (student) => {
+          const matchesSearch =
+            !query ||
+            student.name
+              ?.toLowerCase()
+              .includes(query) ||
+            student.nameAr
+              ?.toLowerCase()
+              .includes(query) ||
+            student.massarCode
+              ?.toLowerCase()
+              .includes(query);
+
+          const matchesClass =
+            !selectedClass ||
+            student.classId ===
+              selectedClass;
+
+          return (
+            matchesSearch &&
+            matchesClass
+          );
+        }
       );
-    });
-  }, [
-    data.students,
-    search,
-    classFilter,
-  ]);
+    }, [
+      students,
+      search,
+      selectedClass,
+    ]);
 
-  /* ===================================================
-     ADD STUDENT
-  =================================================== */
+  /* =====================================================
+     ADD
+  ===================================================== */
 
   const openAdd = () => {
-    if (data.classes.length === 0) {
-      alert('Please create a class first.');
-      return;
-    }
+    setEditingStudent(null);
 
-    setEditing(null);
+    const defaultClass =
+      selectedClass ||
+      classes[0]?.id ||
+      '';
 
     setForm({
-      ...emptyStudent,
-      id: nextStudentId(data.students),
-      classId: data.classes[0].id,
+      ...emptyStudent(),
+      classId: defaultClass,
     });
 
-    setModalOpen(true);
+    setShowModal(true);
   };
 
-  /* ===================================================
-     EDIT STUDENT
-  =================================================== */
+  /* =====================================================
+     EDIT
+  ===================================================== */
 
-  const openEdit = (student: Student) => {
-    setEditing(student);
+  const openEdit = (
+    student: Student
+  ) => {
+    setEditingStudent(student);
 
     setForm({
-      ...emptyStudent,
       ...student,
-      nameAr: student.nameAr ?? '',
-      massarCode: student.massarCode ?? '',
-      dateOfBirth: student.dateOfBirth ?? '',
     });
 
-    setModalOpen(true);
+    setShowModal(true);
   };
 
-  /* ===================================================
+  /* =====================================================
+     CLOSE
+  ===================================================== */
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingStudent(null);
+    setForm(
+      emptyStudent()
+    );
+  };
+
+  /* =====================================================
+     FORM CHANGE
+  ===================================================== */
+
+  const handleChange = (
+    field: keyof Student,
+    value: unknown
+  ) => {
+    setForm(
+      (previous) => ({
+        ...previous,
+        [field]: value,
+      })
+    );
+  };
+
+  /* =====================================================
      SAVE STUDENT
-  =================================================== */
+  ===================================================== */
 
   const handleSave = () => {
-    const arabicName =
-      form.nameAr?.trim();
-
-    if (!arabicName || !form.classId) {
+    if (!form.nameAr?.trim()) {
       alert(
-        'Arabic Name and Class are required.'
+        'Please enter the Arabic student name.'
       );
       return;
     }
 
-    const student: Student = {
-      ...form,
-      name: arabicName,
-      nameAr: arabicName,
-      massarCode:
-        form.massarCode?.trim() ?? '',
-      dateOfBirth:
-        form.dateOfBirth ?? '',
-    };
-
-    if (editing) {
-      setData((currentData) => ({
-        ...currentData,
-        students:
-          currentData.students.map(
-            (item) =>
-              item.id === editing.id
-                ? student
-                : item
-          ),
-      }));
-    } else {
-      const exists =
-        data.students.some(
-          (item) =>
-            item.id === student.id
-        );
-
-      if (exists) {
-        alert(
-          'Student ID already exists.'
-        );
-        return;
-      }
-
-      setData((currentData) => ({
-        ...currentData,
-        students: [
-          ...currentData.students,
-          student,
-        ],
-      }));
+    if (!form.classId) {
+      alert(
+        'Please select a class.'
+      );
+      return;
     }
 
-    setModalOpen(false);
-    setEditing(null);
+    const studentData = {
+      ...(form as Student),
+
+      id:
+        editingStudent?.id ||
+        `STU-${Date.now()}`,
+
+      name:
+        form.name?.trim() ||
+        form.nameAr.trim(),
+
+      nameAr:
+        form.nameAr.trim(),
+
+      massarCode:
+        form.massarCode?.trim() ||
+        '',
+
+      classId:
+        form.classId,
+    };
+
+    if (editingStudent) {
+      updateStudent(
+        studentData
+      );
+    } else {
+      addStudent(
+        studentData
+      );
+    }
+
+    closeModal();
   };
 
-  /* ===================================================
-     DELETE STUDENT
-  =================================================== */
+  /* =====================================================
+     DELETE
+  ===================================================== */
 
   const handleDelete = (
     student: Student
   ) => {
-    const displayName =
-      student.nameAr ||
-      student.massarCode ||
-      student.id;
-
     const confirmed =
       window.confirm(
-        `Delete student ${displayName}?\n\nThis also removes their attendance, assessments and integrated activities.`
+        `Delete ${
+          student.nameAr ||
+          student.name
+        }?`
       );
 
     if (!confirmed) {
       return;
     }
 
-    deleteStudent(student.id);
-
-    if (profileId === student.id) {
-      setProfileId(null);
-    }
+    deleteStudent(
+      student.id
+    );
   };
 
-  /* ===================================================
+  /* =====================================================
+     CLASS NAME
+  ===================================================== */
+
+  const getClassName = (
+    classId: string
+  ) => {
+    return (
+      classes.find(
+        (item) =>
+          item.id === classId
+      )?.name ||
+      'No class'
+    );
+  };
+
+  /* =====================================================
      OPEN IMPORT
-  =================================================== */
+  ===================================================== */
 
   const openImport = () => {
-    if (data.classes.length === 0) {
-      alert('Please create a class first.');
-      return;
-    }
-
+    setImportOpen(true);
     setImportError('');
     setImportStudents([]);
     setImportFileName('');
-    setImportClassId(
-      data.classes[0]?.id ?? ''
-    );
 
-    setImportOpen(true);
+    setImportClassId(
+      selectedClass ||
+        classes[0]?.id ||
+        ''
+    );
   };
 
-  /* ===================================================
-     READ EXCEL
-  =================================================== */
+  /* =====================================================
+     CLOSE IMPORT
+  ===================================================== */
 
-  const handleExcelFile = async (
-    event: ChangeEvent<HTMLInputElement>
-  ) => {
-    const file =
-      event.target.files?.[0];
-
-    if (!file) {
+  const closeImport = () => {
+    if (importing) {
       return;
     }
 
+    setImportOpen(false);
     setImportError('');
     setImportStudents([]);
-    setImportFileName(file.name);
-
-    try {
-      const buffer =
-        await file.arrayBuffer();
-
-      const workbook = XLSX.read(
-        buffer,
-        {
-          type: 'array',
-          cellDates: true,
-        }
-      );
-
-      const sheetName =
-        workbook.SheetNames[0];
-
-      if (!sheetName) {
-        setImportError(
-          'The Excel file does not contain a worksheet.'
-        );
-        return;
-      }
-
-      const worksheet =
-        workbook.Sheets[sheetName];
-
-      const rows =
-        XLSX.utils.sheet_to_json<
-          unknown[]
-        >(worksheet, {
-          header: 1,
-          defval: '',
-          raw: true,
-        });
-
-      if (!rows.length) {
-        setImportError(
-          'The Excel file is empty.'
-        );
-        return;
-      }
-
-      const header =
-        findHeaderRow(rows);
-
-      if (!header) {
-        setImportError(
-          'No students could be found. Required columns: رقم التلميذ, إسم التلميذ, تاريخ الإزدياد.'
-        );
-        return;
-      }
-
-      const parsed: ImportStudent[] =
-        [];
-
-      for (
-        let index =
-          header.rowIndex + 1;
-        index < rows.length;
-        index++
-      ) {
-        const row =
-          rows[index] ?? [];
-
-        const massarCode =
-          String(
-            row[
-              header.massarIndex
-            ] ?? ''
-          )
-            .replace(/\u00A0/g, ' ')
-            .trim();
-
-        const nameAr =
-          String(
-            row[
-              header.nameIndex
-            ] ?? ''
-          )
-            .replace(/\u00A0/g, ' ')
-            .trim();
-
-        const dateOfBirth =
-          header.birthIndex !== -1
-            ? excelDateToString(
-                row[
-                  header.birthIndex
-                ]
-              )
-            : '';
-
-        if (!massarCode && !nameAr) {
-          continue;
-        }
-
-        parsed.push({
-          massarCode,
-          nameAr,
-          dateOfBirth,
-        });
-      }
-
-      if (!parsed.length) {
-        setImportError(
-          'The header was found, but no student rows were found.'
-        );
-        return;
-      }
-
-      const seen = new Set<string>();
-
-      const unique =
-        parsed.filter((student) => {
-          if (!student.massarCode) {
-            return true;
-          }
-
-          const key =
-            student.massarCode
-              .toLowerCase();
-
-          if (seen.has(key)) {
-            return false;
-          }
-
-          seen.add(key);
-          return true;
-        });
-
-      setImportStudents(unique);
-    } catch (error) {
-      console.error(
-        'Excel import error:',
-        error
-      );
-
-      setImportError(
-        'Could not read this Excel file. Please make sure it is a valid .xlsx or .xls file.'
-      );
-    }
-
-    event.target.value = '';
-  };
-
-  /* ===================================================
-     CONFIRM IMPORT
-  =================================================== */
-
-  const confirmImport = () => {
-    if (!importClassId) {
-      alert(
-        'Please select a class first.'
-      );
-      return;
-    }
-
-    if (!importStudents.length) {
-      alert(
-        'There are no students to import.'
-      );
-      return;
-    }
-
-    setImporting(true);
-
-    try {
-      let importedCount = 0;
-      let skippedDuplicates = 0;
-
-      setData((currentData) => {
-        const students =
-          currentData.students ?? [];
-
-        const massarCodes =
-          new Set(
-            students
-              .map((student) =>
-                (
-                  student.massarCode ??
-                  ''
-                )
-                  .trim()
-                  .toLowerCase()
-              )
-              .filter(Boolean)
-          );
-
-        const classNames =
-          new Set(
-            students
-              .filter(
-                (student) =>
-                  student.classId ===
-                  importClassId
-              )
-              .map((student) =>
-                (
-                  student.nameAr ??
-                  student.name
-                )
-                  .trim()
-                  .toLowerCase()
-              )
-              .filter(Boolean)
-          );
-
-        const newStudents: Student[] =
-          [];
-
-        for (const imported of importStudents) {
-          const massarKey =
-            imported.massarCode
-              .trim()
-              .toLowerCase();
-
-          const nameKey =
-            imported.nameAr
-              .trim()
-              .toLowerCase();
-
-          if (
-            massarKey &&
-            massarCodes.has(
-              massarKey
-            )
-          ) {
-            skippedDuplicates++;
-            continue;
-          }
-
-          if (
-            nameKey &&
-            classNames.has(nameKey)
-          ) {
-            skippedDuplicates++;
-            continue;
-          }
-
-          const id =
-            nextStudentId([
-              ...students,
-              ...newStudents,
-            ]);
-
-          const student: Student = {
-            ...emptyStudent,
-            id,
-            name:
-              imported.nameAr,
-            nameAr:
-              imported.nameAr,
-            massarCode:
-              imported.massarCode,
-            dateOfBirth:
-              imported.dateOfBirth,
-            classId:
-              importClassId,
-            gender: 'Male',
-          };
-
-          newStudents.push(student);
-          importedCount++;
-
-          if (massarKey) {
-            massarCodes.add(
-              massarKey
-            );
-          }
-
-          if (nameKey) {
-            classNames.add(
-              nameKey
-            );
-          }
-        }
-
-        return {
-          ...currentData,
-          students: [
-            ...students,
-            ...newStudents,
-          ],
-        };
-      });
-
-      alert(
-        `${importedCount} student(s) imported successfully.${
-          skippedDuplicates > 0
-            ? ` ${skippedDuplicates} duplicate(s) skipped.`
-            : ''
-        }`
-      );
-
-      setImportOpen(false);
-      setImportStudents([]);
-      setImportFileName('');
-    } catch (error) {
-      console.error(
-        'Import students error:',
-        error
-      );
-
-      alert(
-        'Something went wrong while importing students.'
-      );
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  /* ===================================================
-     CREATE CLASS
-  =================================================== */
-
-  const openCreateClass = () => {
-    setNewClassGrade('1APIC');
-    setNewClassAcademicYear(
-      '2026/2027'
-    );
-    setNewClassName('');
-    setCreateClassOpen(true);
-  };
-
-  const createClassFromImport = () => {
-    const grade =
-      newClassGrade.trim();
-
-    const academicYear =
-      newClassAcademicYear.trim();
-
-    const className =
-      newClassName.trim();
+    setImportFileName('');
 
     if (
-      !grade ||
-      !academicYear ||
-      !className
+      fileInputRef.current
     ) {
-      alert(
-        'Level, Academic Year and Class Name are required.'
-      );
-      return;
+      fileInputRef.current.value =
+        '';
     }
-
-    const duplicate =
-      data.classes.some(
-        (item) =>
-          item.name
-            .trim()
-            .toLowerCase() ===
-            className.toLowerCase() &&
-          item.grade === grade &&
-          item.academicYear ===
-            academicYear
-      );
-
-    if (duplicate) {
-      alert(
-        'A class with this name already exists for this level and academic year.'
-      );
-      return;
-    }
-
-    const newClass: ClassRoom = {
-      id: suggestClassId(),
-      name: className,
-      grade,
-      academicYear,
-    };
-
-    setData((currentData) => ({
-      ...currentData,
-      classes: [
-        ...currentData.classes,
-        newClass,
-      ],
-    }));
-
-    setImportClassId(
-      newClass.id
-    );
-
-    setCreateClassOpen(false);
   };
 
-  /* ===================================================
-     PROFILE
-  =================================================== */
+  /* =====================================================
+     HANDLE EXCEL
+  ===================================================== */
 
-  if (profileId) {
-    return (
-      <StudentProfile
-        studentId={profileId}
-        onBack={() =>
-          setProfileId(null)
+  const handleExcelFile =
+    async (
+      event: React.ChangeEvent<HTMLInputElement>
+    ) => {
+      const file =
+        event.target.files?.[0];
+
+      if (!file) {
+        return;
+      }
+
+      setImportError('');
+      setImportStudents([]);
+      setImportFileName(
+        file.name
+      );
+
+      try {
+        const buffer =
+          await file.arrayBuffer();
+
+        const workbook =
+          XLSX.read(
+            buffer,
+            {
+              type: 'array',
+              cellDates: true,
+            }
+          );
+
+        if (
+          !workbook
+            .SheetNames.length
+        ) {
+          throw new Error(
+            'The Excel file does not contain any worksheet.'
+          );
         }
-      />
-    );
-  }
 
-  /* ===================================================
-     RENDER
-  =================================================== */
+        const sheetName =
+          workbook
+            .SheetNames[0];
+
+        const worksheet =
+          workbook.Sheets[
+            sheetName
+          ];
+
+        if (!worksheet) {
+          throw new Error(
+            'Could not read the first worksheet.'
+          );
+        }
+
+        const header =
+          findStudentHeaderRow(
+            worksheet
+          );
+
+        if (!header) {
+          throw new Error(
+            'Could not detect the student header row. Make sure the Excel file contains "رقم التلميذ" and "إسم التلميذ".'
+          );
+        }
+
+        console.log(
+          'Detected Excel header:',
+          header
+        );
+
+        const range =
+          XLSX.utils.decode_range(
+            worksheet['!ref'] ||
+              'A1:A1'
+          );
+
+        const parsed:
+          ImportedStudent[] =
+          [];
+
+        for (
+          let rowIndex =
+            header.rowIndex + 1;
+          rowIndex <=
+            range.e.r;
+          rowIndex++
+        ) {
+          const rawMassar =
+            getCellValue(
+              worksheet,
+              rowIndex,
+              header.massarColumn
+            );
+
+          const rawName =
+            getCellValue(
+              worksheet,
+              rowIndex,
+              header.nameColumn
+            );
+
+          const rawDob =
+            header.dobColumn !==
+            -1
+              ? getCellValue(
+                  worksheet,
+                  rowIndex,
+                  header.dobColumn
+                )
+              : '';
+
+          const massarCode =
+            repairMojibake(
+              cleanCell(
+                rawMassar
+              )
+            ).trim();
+
+          const nameAr =
+            repairMojibake(
+              cleanCell(
+                rawName
+              )
+            ).trim();
+
+          const dateOfBirth =
+            excelDateToISO(
+              rawDob
+            );
+
+          if (
+            !massarCode &&
+            !nameAr
+          ) {
+            continue;
+          }
+
+          if (!nameAr) {
+            continue;
+          }
+
+          parsed.push({
+            massarCode,
+            nameAr,
+            dateOfBirth,
+          });
+        }
+
+        if (!parsed.length) {
+          throw new Error(
+            'No students could be found after the detected header row.'
+          );
+        }
+
+        const uniqueStudents:
+          ImportedStudent[] =
+          [];
+
+        const seenMassar =
+          new Set<string>();
+
+        for (
+          const student of parsed
+        ) {
+          const normalized =
+            student.massarCode
+              .trim()
+              .toLowerCase();
+
+          if (
+            normalized &&
+            seenMassar.has(
+              normalized
+            )
+          ) {
+            continue;
+          }
+
+          if (normalized) {
+            seenMassar.add(
+              normalized
+            );
+          }
+
+          uniqueStudents.push(
+            student
+          );
+        }
+
+        setImportStudents(
+          uniqueStudents
+        );
+
+        console.log(
+          `Excel preview: ${uniqueStudents.length} students`
+        );
+      } catch (error) {
+        console.error(
+          'Excel import error:',
+          error
+        );
+
+        setImportStudents([]);
+
+        setImportError(
+          error instanceof Error
+            ? error.message
+            : 'Could not read the Excel file.'
+        );
+      }
+    };
+
+  /* =====================================================
+     CONFIRM IMPORT
+  ===================================================== */
+
+  const confirmImport =
+    async () => {
+      if (!importClassId) {
+        setImportError(
+          'Please select a class.'
+        );
+        return;
+      }
+
+      if (
+        !importStudents.length
+      ) {
+        setImportError(
+          'There are no students to import.'
+        );
+        return;
+      }
+
+      setImporting(true);
+      setImportError('');
+
+      try {
+        const existingMassarCodes =
+          new Set(
+            students
+              .map(
+                (student) =>
+                  student.massarCode
+                    ?.trim()
+                    .toLowerCase()
+              )
+              .filter(
+                Boolean
+              )
+          );
+
+        const importedMassarCodes =
+          new Set<string>();
+
+        let added = 0;
+        let skipped = 0;
+
+        for (
+          let index = 0;
+          index <
+          importStudents.length;
+          index++
+        ) {
+          const imported =
+            importStudents[
+              index
+            ];
+
+          const massar =
+            imported.massarCode.trim();
+
+          const nameAr =
+            imported.nameAr.trim();
+
+          if (!nameAr) {
+            skipped++;
+            continue;
+          }
+
+          const normalizedMassar =
+            massar.toLowerCase();
+
+          if (
+            normalizedMassar &&
+            existingMassarCodes.has(
+              normalizedMassar
+            )
+          ) {
+            skipped++;
+            continue;
+          }
+
+          if (
+            normalizedMassar &&
+            importedMassarCodes.has(
+              normalizedMassar
+            )
+          ) {
+            skipped++;
+            continue;
+          }
+
+          const student = {
+            ...emptyStudent(),
+
+            id:
+              `STU-${Date.now()}-${index}`,
+
+            massarCode:
+              massar,
+
+            name:
+              nameAr,
+
+            nameAr:
+              nameAr,
+
+            dateOfBirth:
+              imported.dateOfBirth,
+
+            classId:
+              importClassId,
+          } as Student;
+
+          addStudent(
+            student
+          );
+
+          if (
+            normalizedMassar
+          ) {
+            importedMassarCodes.add(
+              normalizedMassar
+            );
+
+            existingMassarCodes.add(
+              normalizedMassar
+            );
+          }
+
+          added++;
+        }
+
+        if (added === 0) {
+          throw new Error(
+            'No new students were imported. They may already exist.'
+          );
+        }
+
+        alert(
+          `Import completed.\n\nAdded: ${added}\nSkipped: ${skipped}`
+        );
+
+        closeImport();
+      } catch (error) {
+        console.error(
+          'Import failed:',
+          error
+        );
+
+        setImportError(
+          error instanceof Error
+            ? error.message
+            : 'Import failed.'
+        );
+      } finally {
+        setImporting(false);
+      }
+    };
+
+  /* =====================================================
+     UI
+  ===================================================== */
 
   return (
-    <div>
-      {/* HEADER */}
+    <div className="min-h-screen bg-gray-100 p-6">
+      <div className="mx-auto max-w-7xl">
 
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-slate-800">
-          Students
-        </h1>
+        {/* HEADER */}
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openImport}
-            disabled={
-              !data.classes.length
-            }
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-          >
-            <Upload size={16} />
-            Import Excel
-          </button>
+        <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">
+              Students
+            </h1>
 
-          <button
-            type="button"
-            onClick={openAdd}
-            disabled={
-              !data.classes.length
-            }
-            className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            <Plus size={16} />
-            Add Student
-          </button>
-        </div>
-      </div>
+            <p className="mt-1 text-sm text-gray-500">
+              Manage student information and educational profiles
+            </p>
+          </div>
 
-      {/* NO CLASSES */}
+          <div className="flex flex-wrap gap-2">
 
-      {!data.classes.length && (
-        <p className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          Add a class first before
-          importing or adding students.
-        </p>
-      )}
-
-      {/* SEARCH */}
-
-      <div className="mb-4 flex flex-wrap gap-3">
-        <div className="relative min-w-[200px] flex-1">
-          <Search
-            size={16}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-          />
-
-          <input
-            value={search}
-            onChange={(event) =>
-              setSearch(
-                event.target.value
-              )
-            }
-            placeholder="Search by Massar Code or Arabic name..."
-            className="form-input pl-9"
-          />
-        </div>
-
-        <select
-          value={classFilter}
-          onChange={(event) =>
-            setClassFilter(
-              event.target.value
-            )
-          }
-          className="form-select min-w-[180px]"
-        >
-          <option value="">
-            All Classes
-          </option>
-
-          {data.classes.map(
-            (classRoom) => (
-              <option
-                key={classRoom.id}
-                value={classRoom.id}
-              >
-                {classRoom.name}
-              </option>
-            )
-          )}
-        </select>
-      </div>
-
-      {/* TABLE */}
-
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-semibold">
-                Massar Code
-              </th>
-
-              <th
-                className="px-4 py-3 font-semibold"
-                dir="rtl"
-              >
-                الاسم بالعربية
-              </th>
-
-              <th className="px-4 py-3 font-semibold">
-                Date of Birth
-              </th>
-
-              <th className="px-4 py-3 font-semibold">
-                Class
-              </th>
-
-              <th className="px-4 py-3 font-semibold">
-                Gender
-              </th>
-
-              <th className="px-4 py-3 font-semibold">
-                Attendance
-              </th>
-
-              <th className="px-4 py-3 font-semibold">
-                Avg Score
-              </th>
-
-              <th className="px-4 py-3 font-semibold">
-                Status
-              </th>
-
-              <th className="px-4 py-3 text-right font-semibold">
-                Actions
-              </th>
-            </tr>
-          </thead>
-
-          <tbody className="divide-y divide-slate-100">
-            {!filteredStudents.length && (
-              <tr>
-                <td
-                  colSpan={9}
-                  className="px-4 py-8 text-center text-slate-400"
-                >
-                  No students found.
-                </td>
-              </tr>
-            )}
-
-            {filteredStudents.map(
-              (student) => {
-                const summary =
-                  summarizeStudent(
-                    student,
-                    data.attendance,
-                    data.assessments
-                  );
-
-                return (
-                  <tr
-                    key={student.id}
-                    onClick={() =>
-                      setProfileId(
-                        student.id
-                      )
-                    }
-                    className="cursor-pointer hover:bg-slate-50/60"
-                  >
-                    <td className="px-4 py-3 font-medium text-slate-700">
-                      {student.massarCode ||
-                        '—'}
-                    </td>
-
-                    <td
-                      className="px-4 py-3 text-right font-medium text-slate-700"
-                      dir="rtl"
-                      lang="ar"
-                    >
-                      {student.nameAr ||
-                        '—'}
-                    </td>
-
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatDate(
-                        student.dateOfBirth
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3 text-slate-600">
-                      {getClassName(
-                        student.classId
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3 text-slate-600">
-                      {student.gender}
-                    </td>
-
-                    <td className="px-4 py-3 text-slate-600">
-                      {summary.totalSessions >
-                      0
-                        ? fmtPct(
-                            summary.attendanceRate
-                          )
-                        : '-'}
-                    </td>
-
-                    <td className="px-4 py-3 text-slate-600">
-                      {fmtPct(
-                        summary.averageScore
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <StatusBadge
-                        status={
-                          summary.status
-                        }
-                      />
-                    </td>
-
-                    <td
-                      className="px-4 py-3"
-                      onClick={(event) =>
-                        event.stopPropagation()
-                      }
-                    >
-                      <div className="flex justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            openEdit(
-                              student
-                            )
-                          }
-                          className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-sky-600"
-                          aria-label="Edit student"
-                        >
-                          <Pencil
-                            size={16}
-                          />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleDelete(
-                              student
-                            )
-                          }
-                          className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-rose-600"
-                          aria-label="Delete student"
-                        >
-                          <Trash2
-                            size={16}
-                          />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              }
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* =================================================
-          ADD / EDIT MODAL
-      ================================================= */}
-
-      <Modal
-        open={modalOpen}
-        title={
-          editing
-            ? 'Edit Student'
-            : 'Add Student'
-        }
-        onClose={() =>
-          setModalOpen(false)
-        }
-      >
-        <div className="space-y-6">
-          {/* BASIC INFORMATION */}
-
-          <FormSection title="Basic Information">
-            <Field label="Massar Code">
-              <input
-                value={
-                  form.massarCode ?? ''
-                }
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    massarCode:
-                      event.target.value,
-                  })
-                }
-                className="form-input"
-              />
-            </Field>
-
-            <Field label="Student ID">
-              <input
-                value={form.id}
-                disabled
-                className="form-input bg-slate-50"
-              />
-            </Field>
-
-            <Field label="الاسم بالعربية">
-              <input
-                value={
-                  form.nameAr ?? ''
-                }
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    name:
-                      event.target.value,
-                    nameAr:
-                      event.target.value,
-                  })
-                }
-                placeholder="مثال: حراك آدم"
-                dir="rtl"
-                lang="ar"
-                className="form-input text-right"
-              />
-            </Field>
-
-            <Field label="Date of Birth">
-              <input
-                type="date"
-                value={
-                  form.dateOfBirth ?? ''
-                }
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    dateOfBirth:
-                      event.target.value,
-                  })
-                }
-                className="form-input"
-              />
-            </Field>
-
-            <Field label="Class">
-              <select
-                value={
-                  form.classId
-                }
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    classId:
-                      event.target.value,
-                  })
-                }
-                className="form-select"
-              >
-                <option value="">
-                  Select class...
-                </option>
-
-                {data.classes.map(
-                  (classRoom) => (
-                    <option
-                      key={
-                        classRoom.id
-                      }
-                      value={
-                        classRoom.id
-                      }
-                    >
-                      {classRoom.name}
-                    </option>
-                  )
-                )}
-              </select>
-            </Field>
-
-            <Field label="Gender">
-              <select
-                value={form.gender}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    gender:
-                      event.target
-                        .value as Gender,
-                  })
-                }
-                className="form-select"
-              >
-                <option value="Male">
-                  Male
-                </option>
-
-                <option value="Female">
-                  Female
-                </option>
-              </select>
-            </Field>
-          </FormSection>
-
-          {/* EDUCATIONAL PROFILE */}
-
-          <FormSection title="Educational Profile">
-            <SelectField
-              label="Learning Style"
-              value={
-                form.learningStyle ??
-                'Not identified'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  learningStyle:
-                    value as LearningStyle,
-                })
-              }
-              options={[
-                'Visual',
-                'Auditory',
-                'Reading/Writing',
-                'Kinesthetic',
-                'Mixed',
-                'Not identified',
-              ]}
-            />
-
-            <SelectField
-              label="Learning Preference"
-              value={
-                form.learningPreference ??
-                'Mixed'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  learningPreference:
-                    value as LearningPreference,
-                })
-              }
-              options={[
-                'Individual work',
-                'Pair work',
-                'Group work',
-                'Mixed',
-              ]}
-            />
-
-            <SelectField
-              label="Participation"
-              value={
-                form.participationLevel ??
-                'Average'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  participationLevel:
-                    value as ParticipationLevel,
-                })
-              }
-              options={[
-                'Active',
-                'Average',
-                'Quiet',
-                'Needs encouragement',
-              ]}
-            />
-
-            <SelectField
-              label="Learning Behaviour"
-              value={
-                form.learningBehaviour ??
-                'Mixed'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  learningBehaviour:
-                    value as LearningBehaviour,
-                })
-              }
-              options={[
-                'Independent',
-                'Needs guidance',
-                'Easily distracted',
-                'Consistent',
-                'Mixed',
-              ]}
-            />
-
-            <SelectField
-              label="Motivation"
-              value={
-                form.motivationLevel ??
-                'Unknown'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  motivationLevel:
-                    value as MotivationLevel,
-                })
-              }
-              options={[
-                'High',
-                'Good',
-                'Average',
-                'Low',
-                'Unknown',
-              ]}
-            />
-
-            <TextAreaField
-              label="Learning Needs"
-              value={
-                form.learningNeeds ??
-                ''
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  learningNeeds:
-                    value,
-                })
-              }
-              placeholder="What does the student need help with?"
-            />
-          </FormSection>
-
-          {/* LANGUAGE */}
-
-          <FormSection title="Language & Learning">
-            <TextField
-              label="First Language"
-              value={
-                form.firstLanguage ??
-                ''
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  firstLanguage:
-                    value,
-                })
-              }
-            />
-
-            <TextField
-              label="Other Languages"
-              value={
-                form.otherLanguages ??
-                ''
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  otherLanguages:
-                    value,
-                })
-              }
-            />
-
-            <SkillSelect
-              label="English Level"
-              value={
-                form.englishLevel ??
-                'Not assessed'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  englishLevel:
-                    value,
-                })
-              }
-            />
-
-            <SkillSelect
-              label="Speaking Level"
-              value={
-                form.speakingLevel ??
-                'Not assessed'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  speakingLevel:
-                    value,
-                })
-              }
-            />
-
-            <SkillSelect
-              label="Listening Level"
-              value={
-                form.listeningLevel ??
-                'Not assessed'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  listeningLevel:
-                    value,
-                })
-              }
-            />
-
-            <SkillSelect
-              label="Reading Level"
-              value={
-                form.readingLevel ??
-                'Not assessed'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  readingLevel:
-                    value,
-                })
-              }
-            />
-
-            <SkillSelect
-              label="Writing Level"
-              value={
-                form.writingLevel ??
-                'Not assessed'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  writingLevel:
-                    value,
-                })
-              }
-            />
-
-            <SkillSelect
-              label="Vocabulary Level"
-              value={
-                form.vocabularyLevel ??
-                'Not assessed'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  vocabularyLevel:
-                    value,
-                })
-              }
-            />
-
-            <SkillSelect
-              label="Grammar Level"
-              value={
-                form.grammarLevel ??
-                'Not assessed'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  grammarLevel:
-                    value,
-                })
-              }
-            />
-
-            <SkillSelect
-              label="Pronunciation Level"
-              value={
-                form.pronunciationLevel ??
-                'Not assessed'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  pronunciationLevel:
-                    value,
-                })
-              }
-            />
-          </FormSection>
-
-          {/* CLASSROOM BEHAVIOUR */}
-
-          <FormSection title="Classroom Behaviour">
-            <SelectField
-              label="Classroom Behaviour"
-              value={
-                form.classroomBehaviour ??
-                'Average'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  classroomBehaviour:
-                    value as Student['classroomBehaviour'],
-                })
-              }
-              options={[
-                'Excellent',
-                'Good',
-                'Average',
-                'Needs improvement',
-              ]}
-            />
-
-            <SelectField
-              label="Attention Level"
-              value={
-                form.attentionLevel ??
-                'Usually focused'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  attentionLevel:
-                    value as Student['attentionLevel'],
-                })
-              }
-              options={[
-                'Focused',
-                'Usually focused',
-                'Sometimes distracted',
-                'Frequently distracted',
-              ]}
-            />
-
-            <SelectField
-              label="Homework Completion"
-              value={
-                form.homeworkCompletion ??
-                'Usually'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  homeworkCompletion:
-                    value as Student['homeworkCompletion'],
-                })
-              }
-              options={[
-                'Always',
-                'Usually',
-                'Sometimes',
-                'Rarely',
-              ]}
-            />
-
-            <SelectField
-              label="Punctuality"
-              value={
-                form.punctuality ??
-                'Usually on time'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  punctuality:
-                    value as Student['punctuality'],
-                })
-              }
-              options={[
-                'Always on time',
-                'Usually on time',
-                'Sometimes late',
-                'Frequently late',
-              ]}
-            />
-
-            <SelectField
-              label="Peer Interaction"
-              value={
-                form.peerInteraction ??
-                'Good'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  peerInteraction:
-                    value as Student['peerInteraction'],
-                })
-              }
-              options={[
-                'Excellent',
-                'Good',
-                'Average',
-                'Needs support',
-              ]}
-            />
-
-            <SelectField
-              label="Teacher Interaction"
-              value={
-                form.teacherInteraction ??
-                'Good'
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  teacherInteraction:
-                    value as Student['teacherInteraction'],
-                })
-              }
-              options={[
-                'Excellent',
-                'Good',
-                'Average',
-                'Needs encouragement',
-              ]}
-            />
-
-            <TextAreaField
-              label="Behaviour Notes"
-              value={
-                form.behaviourNotes ??
-                ''
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  behaviourNotes:
-                    value,
-                })
-              }
-            />
-          </FormSection>
-
-          {/* TEACHER NOTES */}
-
-          <FormSection title="Teacher Notes">
-            <TextAreaField
-              label="Strengths"
-              value={
-                form.strengths ?? ''
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  strengths: value,
-                })
-              }
-              placeholder="What does the student do well?"
-            />
-
-            <TextAreaField
-              label="Areas for Improvement"
-              value={
-                form.areasForImprovement ??
-                ''
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  areasForImprovement:
-                    value,
-                })
-              }
-            />
-
-            <TextAreaField
-              label="Educational Goals"
-              value={
-                form.educationalGoals ??
-                ''
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  educationalGoals:
-                    value,
-                })
-              }
-            />
-
-            <TextAreaField
-              label="Educational Notes"
-              value={
-                form.educationalNotes ??
-                ''
-              }
-              onChange={(value) =>
-                setForm({
-                  ...form,
-                  educationalNotes:
-                    value,
-                })
-              }
-            />
-          </FormSection>
-
-          {/* SAVE BUTTONS */}
-
-          <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={() =>
-                setModalOpen(false)
-              }
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+              onClick={openImport}
+              className="flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
             >
-              Cancel
+              <Upload size={18} />
+              Import Excel
             </button>
 
             <button
               type="button"
-              onClick={handleSave}
-              className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700"
+              onClick={openAdd}
+              className="flex items-center justify-center gap-2 rounded-lg bg-gray-800 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-gray-700"
             >
-              {editing
-                ? 'Save Changes'
-                : 'Add Student'}
+              <Plus size={18} />
+              Add Student
             </button>
+
           </div>
         </div>
-      </Modal>
 
-      {/* =================================================
-          IMPORT MODAL
-      ================================================= */}
+        {/* FILTERS */}
 
-      <Modal
-        open={importOpen}
-        title="Import Students from Excel"
-        onClose={() => {
-          if (!importing) {
-            setImportOpen(false);
-          }
-        }}
-      >
-        <div className="space-y-5">
-          <div className="rounded-lg border border-sky-100 bg-sky-50 p-4">
-            <div className="flex items-start gap-3">
-              <FileSpreadsheet
-                size={20}
-                className="mt-0.5 text-sky-600"
+        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+
+            <div className="relative">
+
+              <Search
+                size={18}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
               />
+
+              <input
+                type="text"
+                value={search}
+                onChange={(e) =>
+                  setSearch(
+                    e.target.value
+                  )
+                }
+                placeholder="Search by Arabic name, English name or Massar code..."
+                className="w-full rounded-lg border border-gray-300 bg-gray-50 py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-gray-500 focus:bg-white"
+              />
+
+            </div>
+
+            <select
+              value={selectedClass}
+              onChange={(e) =>
+                setSelectedClass(
+                  e.target.value
+                )
+              }
+              className="rounded-lg border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-gray-500"
+            >
+
+              <option value="">
+                All classes
+              </option>
+
+              {classes.map(
+                (classRoom) => (
+                  <option
+                    key={
+                      classRoom.id
+                    }
+                    value={
+                      classRoom.id
+                    }
+                  >
+                    {
+                      classRoom.name
+                    }
+                  </option>
+                )
+              )}
+
+            </select>
+
+          </div>
+
+        </div>
+
+        {/* STATS */}
+
+        <div className="mb-6 grid grid-cols-1 gap-4">
+
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+
+            <div className="flex items-center gap-3">
+
+              <div className="rounded-lg bg-gray-100 p-2.5">
+
+                <Users
+                  size={20}
+                  className="text-gray-700"
+                />
+
+              </div>
 
               <div>
-                <p className="text-sm font-semibold text-sky-800">
-                  Ministry Excel format
+
+                <p className="text-sm text-gray-500">
+                  Total Students
                 </p>
 
-                <p
-                  className="mt-1 text-xs leading-5 text-sky-700"
-                  dir="rtl"
-                >
-                  خاص الملف يحتوي على الأعمدة:
-                  <br />
-
-                  <strong>
-                    رقم التلميذ
-                  </strong>
-
-                  {' ، '}
-
-                  <strong>
-                    إسم التلميذ
-                  </strong>
-
-                  {' ، '}
-
-                  <strong>
-                    تاريخ الإزدياد
-                  </strong>
+                <p className="text-2xl font-bold text-gray-800">
+                  {
+                    students.length
+                  }
                 </p>
+
               </div>
+
             </div>
+
           </div>
 
-          <Field label="Import students into">
-            <div className="flex gap-2">
-              <select
-                value={
-                  importClassId
-                }
-                onChange={(event) =>
-                  setImportClassId(
-                    event.target.value
-                  )
-                }
-                className="form-select flex-1"
-              >
-                <option value="">
-                  Select class...
-                </option>
+        </div>
 
-                {data.classes.map(
-                  (classRoom) => (
-                    <option
-                      key={
-                        classRoom.id
-                      }
-                      value={
-                        classRoom.id
-                      }
+        {/* TABLE */}
+
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+
+          <div className="overflow-x-auto">
+
+            <table className="w-full min-w-[700px]">
+
+              <thead className="border-b border-gray-200 bg-gray-50">
+
+                <tr>
+
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Student
+                  </th>
+
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Massar
+                  </th>
+
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Class
+                  </th>
+
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Actions
+                  </th>
+
+                </tr>
+
+              </thead>
+
+              <tbody className="divide-y divide-gray-100">
+
+                {filteredStudents.length === 0 ? (
+                  <tr>
+
+                    <td
+                      colSpan={4}
+                      className="px-5 py-12 text-center text-sm text-gray-500"
                     >
-                      {classRoom.name}
-                    </option>
+                      No students found.
+                    </td>
+
+                  </tr>
+                ) : (
+                  filteredStudents.map(
+                    (student) => (
+                      <tr
+                        key={
+                          student.id
+                        }
+                        className="transition hover:bg-gray-50"
+                      >
+
+                        <td className="px-5 py-4">
+
+                          <div>
+
+                            <p
+                              dir="rtl"
+                              lang="ar"
+                              className="font-medium text-gray-800"
+                            >
+                              {
+                                student.nameAr ||
+                                student.name
+                              }
+                            </p>
+
+                            {student.name &&
+                              student.name !==
+                                student.nameAr && (
+                                <p className="mt-0.5 text-xs text-gray-500">
+                                  {
+                                    student.name
+                                  }
+                                </p>
+                              )}
+
+                          </div>
+
+                        </td>
+
+                        <td className="px-5 py-4 text-sm text-gray-600">
+                          {
+                            student.massarCode ||
+                            '-'
+                          }
+                        </td>
+
+                        <td className="px-5 py-4 text-sm text-gray-600">
+                          {
+                            getClassName(
+                              student.classId
+                            )
+                          }
+                        </td>
+
+                        <td className="px-5 py-4">
+
+                          <div className="flex justify-end gap-2">
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openEdit(
+                                  student
+                                )
+                              }
+                              className="rounded-lg border border-gray-200 p-2 text-gray-600 transition hover:bg-gray-100"
+                              title="Edit"
+                            >
+                              <Edit size={16} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleDelete(
+                                  student
+                                )
+                              }
+                              className="rounded-lg border border-gray-200 p-2 text-gray-600 transition hover:bg-gray-100"
+                              title="Delete"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+
+                          </div>
+
+                        </td>
+
+                      </tr>
+                    )
                   )
                 )}
-              </select>
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* ===================================================
+          ADD / EDIT MODAL
+      =================================================== */}
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+
+          <div className="max-h-[95vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+
+              <div>
+
+                <h2 className="text-lg font-bold text-gray-800">
+                  {
+                    editingStudent
+                      ? 'Edit Student'
+                      : 'Add Student'
+                  }
+                </h2>
+
+                <p className="text-xs text-gray-500">
+                  Student information
+                </p>
+
+              </div>
 
               <button
                 type="button"
-                onClick={
-                  openCreateClass
-                }
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-50"
+                onClick={closeModal}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
               >
-                <Plus size={16} />
-                Create Class
+                <X size={20} />
               </button>
+
             </div>
-          </Field>
 
-          <div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={
-                handleExcelFile
-              }
-              className="hidden"
-            />
+            <div className="max-h-[calc(95vh-140px)] overflow-y-auto p-6">
 
-            <button
-              type="button"
-              onClick={() =>
-                fileInputRef.current?.click()
-              }
-              className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm font-medium text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
-            >
-              <Upload size={20} />
+              {/* BASIC */}
 
-              {importFileName ||
-                'Choose Excel File'}
-            </button>
-          </div>
+              <SectionTitle
+                title="Basic Information"
+              />
 
-          {importError && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {importError}
-            </div>
-          )}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
 
-          {importStudents.length >
-            0 && (
-            <div>
-              <div className="mb-2">
-                <p className="text-sm font-semibold text-slate-800">
-                  Preview
-                </p>
+                <Input
+                  label="Arabic Name *"
+                  value={
+                    form.nameAr ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'nameAr',
+                      value
+                    )
+                  }
+                  dir="rtl"
+                  placeholder="مثال: آدم"
+                />
 
-                <p className="text-xs text-slate-500">
-                  {
-                    importStudents.length
-                  }{' '}
-                  student(s) found
-                </p>
+                <Input
+                  label="English Name"
+                  value={
+                    form.name ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'name',
+                      value
+                    )
+                  }
+                  placeholder="Adam"
+                />
+
+                <Input
+                  label="Massar Code"
+                  value={
+                    form.massarCode ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'massarCode',
+                      value
+                    )
+                  }
+                />
+
+                <Input
+                  label="Date of Birth"
+                  type="date"
+                  value={
+                    form.dateOfBirth ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'dateOfBirth',
+                      value
+                    )
+                  }
+                />
+
+                <Select
+                  label="Class *"
+                  value={
+                    form.classId ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'classId',
+                      value
+                    )
+                  }
+                  options={[
+                    {
+                      value: '',
+                      label:
+                        'Select class',
+                    },
+                    ...classes.map(
+                      (item) => ({
+                        value:
+                          item.id,
+                        label:
+                          item.name,
+                      })
+                    ),
+                  ]}
+                />
+
               </div>
 
-              <div className="max-h-80 overflow-auto rounded-lg border border-slate-200">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                        #
-                      </th>
+              {/* EDUCATIONAL */}
 
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                        Massar Code
-                      </th>
+              <SectionTitle
+                title="Educational Profile"
+              />
 
-                      <th
-                        className="px-3 py-2 text-right text-xs font-semibold text-slate-500"
-                        dir="rtl"
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+
+                <Select
+                  label="Learning Style"
+                  value={
+                    form.learningStyle ||
+                    'Not identified'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'learningStyle',
+                      value as LearningStyle
+                    )
+                  }
+                  options={options([
+                    'Visual',
+                    'Auditory',
+                    'Reading/Writing',
+                    'Kinesthetic',
+                    'Mixed',
+                    'Not identified',
+                  ])}
+                />
+
+                <Select
+                  label="Learning Preference"
+                  value={
+                    form.learningPreference ||
+                    'Mixed'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'learningPreference',
+                      value as LearningPreference
+                    )
+                  }
+                  options={options([
+                    'Individual work',
+                    'Pair work',
+                    'Group work',
+                    'Mixed',
+                  ])}
+                />
+
+                <Select
+                  label="Participation"
+                  value={
+                    form.participationLevel ||
+                    'Average'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'participationLevel',
+                      value as ParticipationLevel
+                    )
+                  }
+                  options={options([
+                    'Active',
+                    'Average',
+                    'Quiet',
+                    'Needs encouragement',
+                  ])}
+                />
+
+                <Select
+                  label="Learning Behaviour"
+                  value={
+                    form.learningBehaviour ||
+                    'Mixed'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'learningBehaviour',
+                      value as LearningBehaviour
+                    )
+                  }
+                  options={options([
+                    'Independent',
+                    'Needs guidance',
+                    'Easily distracted',
+                    'Consistent',
+                    'Mixed',
+                  ])}
+                />
+
+                <Select
+                  label="Motivation"
+                  value={
+                    form.motivationLevel ||
+                    'Unknown'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'motivationLevel',
+                      value as MotivationLevel
+                    )
+                  }
+                  options={options([
+                    'High',
+                    'Good',
+                    'Average',
+                    'Low',
+                    'Unknown',
+                  ])}
+                />
+
+              </div>
+
+              <TextArea
+                label="Strengths"
+                value={
+                  form.strengths ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'strengths',
+                    value
+                  )
+                }
+              />
+
+              <TextArea
+                label="Areas for Improvement"
+                value={
+                  form.areasForImprovement ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'areasForImprovement',
+                    value
+                  )
+                }
+              />
+
+              <TextArea
+                label="Learning Needs"
+                value={
+                  form.learningNeeds ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'learningNeeds',
+                    value
+                  )
+                }
+              />
+
+              <TextArea
+                label="Educational Goals"
+                value={
+                  form.educationalGoals ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'educationalGoals',
+                    value
+                  )
+                }
+              />
+
+              <TextArea
+                label="Educational Notes"
+                value={
+                  form.educationalNotes ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'educationalNotes',
+                    value
+                  )
+                }
+              />
+
+              {/* LANGUAGE */}
+
+              <SectionTitle
+                title="Language Profile"
+              />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+
+                <Input
+                  label="First Language"
+                  value={
+                    form.firstLanguage ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'firstLanguage',
+                      value
+                    )
+                  }
+                />
+
+                <Input
+                  label="Other Languages"
+                  value={
+                    form.otherLanguages ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'otherLanguages',
+                      value
+                    )
+                  }
+                />
+
+                <SkillSelect
+                  label="English Level"
+                  value={
+                    form.englishLevel
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'englishLevel',
+                      value
+                    )
+                  }
+                />
+
+                <SkillSelect
+                  label="Speaking"
+                  value={
+                    form.speakingLevel
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'speakingLevel',
+                      value
+                    )
+                  }
+                />
+
+                <SkillSelect
+                  label="Listening"
+                  value={
+                    form.listeningLevel
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'listeningLevel',
+                      value
+                    )
+                  }
+                />
+
+                <SkillSelect
+                  label="Reading"
+                  value={
+                    form.readingLevel
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'readingLevel',
+                      value
+                    )
+                  }
+                />
+
+                <SkillSelect
+                  label="Writing"
+                  value={
+                    form.writingLevel
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'writingLevel',
+                      value
+                    )
+                  }
+                />
+
+                <SkillSelect
+                  label="Vocabulary"
+                  value={
+                    form.vocabularyLevel
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'vocabularyLevel',
+                      value
+                    )
+                  }
+                />
+
+                <SkillSelect
+                  label="Grammar"
+                  value={
+                    form.grammarLevel
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'grammarLevel',
+                      value
+                    )
+                  }
+                />
+
+                <SkillSelect
+                  label="Pronunciation"
+                  value={
+                    form.pronunciationLevel
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'pronunciationLevel',
+                      value
+                    )
+                  }
+                />
+
+              </div>
+
+              {/* CLASSROOM */}
+
+              <SectionTitle
+                title="Classroom Behaviour"
+              />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+
+                <Select
+                  label="Classroom Behaviour"
+                  value={
+                    form.classroomBehaviour ||
+                    'Good'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'classroomBehaviour',
+                      value as ClassroomBehaviour
+                    )
+                  }
+                  options={options([
+                    'Excellent',
+                    'Good',
+                    'Average',
+                    'Needs improvement',
+                  ])}
+                />
+
+                <Select
+                  label="Attention"
+                  value={
+                    form.attentionLevel ||
+                    'Usually focused'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'attentionLevel',
+                      value as AttentionLevel
+                    )
+                  }
+                  options={options([
+                    'Focused',
+                    'Usually focused',
+                    'Sometimes distracted',
+                    'Frequently distracted',
+                  ])}
+                />
+
+                <Select
+                  label="Homework Completion"
+                  value={
+                    form.homeworkCompletion ||
+                    'Usually'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'homeworkCompletion',
+                      value as HomeworkCompletion
+                    )
+                  }
+                  options={options([
+                    'Always',
+                    'Usually',
+                    'Sometimes',
+                    'Rarely',
+                  ])}
+                />
+
+                <Select
+                  label="Punctuality"
+                  value={
+                    form.punctuality ||
+                    'Usually on time'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'punctuality',
+                      value as PunctualityLevel
+                    )
+                  }
+                  options={options([
+                    'Always on time',
+                    'Usually on time',
+                    'Sometimes late',
+                    'Frequently late',
+                  ])}
+                />
+
+                <Select
+                  label="Peer Interaction"
+                  value={
+                    form.peerInteraction ||
+                    'Good'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'peerInteraction',
+                      value as PeerInteraction
+                    )
+                  }
+                  options={options([
+                    'Excellent',
+                    'Good',
+                    'Average',
+                    'Needs support',
+                  ])}
+                />
+
+                <Select
+                  label="Teacher Interaction"
+                  value={
+                    form.teacherInteraction ||
+                    'Good'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'teacherInteraction',
+                      value as TeacherInteraction
+                    )
+                  }
+                  options={options([
+                    'Excellent',
+                    'Good',
+                    'Average',
+                    'Needs encouragement',
+                  ])}
+                />
+
+              </div>
+
+              <TextArea
+                label="Behaviour Notes"
+                value={
+                  form.behaviourNotes ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'behaviourNotes',
+                    value
+                  )
+                }
+              />
+
+              {/* ATTENDANCE */}
+
+              <SectionTitle
+                title="Attendance & Engagement"
+              />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+
+                <Select
+                  label="Attendance Pattern"
+                  value={
+                    form.attendancePattern ||
+                    'Unknown'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'attendancePattern',
+                      value as AttendancePattern
+                    )
+                  }
+                  options={options([
+                    'Regular',
+                    'Occasional absences',
+                    'Frequent absences',
+                    'Unknown',
+                  ])}
+                />
+
+                <Select
+                  label="Engagement"
+                  value={
+                    form.engagementLevel ||
+                    'Average'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'engagementLevel',
+                      value as ParticipationLevel
+                    )
+                  }
+                  options={options([
+                    'Active',
+                    'Average',
+                    'Quiet',
+                    'Needs encouragement',
+                  ])}
+                />
+
+                <Input
+                  label="Absence Reason"
+                  value={
+                    form.absenceReason ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'absenceReason',
+                      value
+                    )
+                  }
+                />
+
+              </div>
+
+              <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
+
+                <input
+                  type="checkbox"
+                  checked={
+                    form.frequentLateness ||
+                    false
+                  }
+                  onChange={(e) =>
+                    handleChange(
+                      'frequentLateness',
+                      e.target.checked
+                    )
+                  }
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+
+                Frequent lateness
+
+              </label>
+
+              <TextArea
+                label="Engagement Notes"
+                value={
+                  form.engagementNotes ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'engagementNotes',
+                    value
+                  )
+                }
+              />
+
+              {/* SOCIAL */}
+
+              <SectionTitle
+                title="Social & Family Context"
+              />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+
+                <Input
+                  label="Living Arrangement"
+                  value={
+                    form.livingArrangement ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'livingArrangement',
+                      value
+                    )
+                  }
+                />
+
+                <Select
+                  label="Family Support"
+                  value={
+                    form.familySupport ||
+                    'Unknown'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'familySupport',
+                      value as FamilySupport
+                    )
+                  }
+                  options={options([
+                    'Strong',
+                    'Good',
+                    'Limited',
+                    'Unknown',
+                  ])}
+                />
+
+                <Select
+                  label="Home Learning Environment"
+                  value={
+                    form.homeLearningEnvironment ||
+                    'Unknown'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'homeLearningEnvironment',
+                      value as HomeLearningEnvironment
+                    )
+                  }
+                  options={options([
+                    'Supportive',
+                    'Adequate',
+                    'Limited',
+                    'Unknown',
+                  ])}
+                />
+
+                <Select
+                  label="Learning Resources"
+                  value={
+                    form.accessToLearningResources ||
+                    'Unknown'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'accessToLearningResources',
+                      value as ResourceAccess
+                    )
+                  }
+                  options={options([
+                    'Good',
+                    'Limited',
+                    'None',
+                    'Unknown',
+                  ])}
+                />
+
+                <Select
+                  label="Transportation Difficulty"
+                  value={
+                    form.transportationDifficulty ||
+                    'No issue'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'transportationDifficulty',
+                      value as DifficultyLevel
+                    )
+                  }
+                  options={options([
+                    'No issue',
+                    'Sometimes difficult',
+                    'Significant difficulty',
+                    'Unknown',
+                  ])}
+                />
+
+                <Select
+                  label="Family Follow-up"
+                  value={
+                    form.familyFollowUp ||
+                    'Not needed'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'familyFollowUp',
+                      value as FamilyFollowUp
+                    )
+                  }
+                  options={options([
+                    'Not needed',
+                    'Occasional',
+                    'Regular',
+                    'Required',
+                  ])}
+                />
+
+              </div>
+
+              <TextArea
+                label="Social Support"
+                value={
+                  form.socialSupport ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'socialSupport',
+                    value
+                  )
+                }
+              />
+
+              <TextArea
+                label="Social & Educational Notes"
+                value={
+                  form.socialEducationalNotes ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'socialEducationalNotes',
+                    value
+                  )
+                }
+              />
+
+              {/* SUPPORT */}
+
+              <SectionTitle
+                title="Health & Educational Support"
+              />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+
+                <Select
+                  label="Health Consideration"
+                  value={
+                    form.healthConsideration ||
+                    'None'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'healthConsideration',
+                      value as HealthConsideration
+                    )
+                  }
+                  options={options([
+                    'None',
+                    'Known consideration',
+                    'Requires attention',
+                  ])}
+                />
+
+                <Select
+                  label="Special Educational Needs"
+                  value={
+                    form.specialEducationalNeeds ||
+                    'Not known'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'specialEducationalNeeds',
+                      value as AccommodationStatus
+                    )
+                  }
+                  options={options([
+                    'None',
+                    'Not known',
+                    'Yes',
+                  ])}
+                />
+
+                <Select
+                  label="Learning Accommodation"
+                  value={
+                    form.learningAccommodationNeeded ||
+                    'Not known'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'learningAccommodationNeeded',
+                      value as AccommodationStatus
+                    )
+                  }
+                  options={options([
+                    'None',
+                    'Not known',
+                    'Yes',
+                  ])}
+                />
+
+                <Select
+                  label="Support Required"
+                  value={
+                    form.supportRequired ||
+                    'None'
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'supportRequired',
+                      value as SupportRequired
+                    )
+                  }
+                  options={options([
+                    'None',
+                    'Academic',
+                    'Behavioural',
+                    'Social',
+                    'Multiple areas',
+                  ])}
+                />
+
+              </div>
+
+              <TextArea
+                label="Health Notes"
+                value={
+                  form.healthNotes ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'healthNotes',
+                    value
+                  )
+                }
+              />
+
+              <TextArea
+                label="Accessibility Needs"
+                value={
+                  form.accessibilityNeeds ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'accessibilityNeeds',
+                    value
+                  )
+                }
+              />
+
+              <TextArea
+                label="Support Notes"
+                value={
+                  form.supportNotes ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'supportNotes',
+                    value
+                  )
+                }
+              />
+
+              {/* INTERESTS */}
+
+              <SectionTitle
+                title="Interests & Motivation"
+              />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+
+                <Input
+                  label="Interests"
+                  value={
+                    form.interests ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'interests',
+                      value
+                    )
+                  }
+                />
+
+                <Input
+                  label="Hobbies"
+                  value={
+                    form.hobbies ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'hobbies',
+                      value
+                    )
+                  }
+                />
+
+                <Input
+                  label="Favourite Topics"
+                  value={
+                    form.favouriteTopics ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'favouriteTopics',
+                      value
+                    )
+                  }
+                />
+
+                <Input
+                  label="Motivation Factors"
+                  value={
+                    form.motivationFactors ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'motivationFactors',
+                      value
+                    )
+                  }
+                />
+
+                <Input
+                  label="Career Interests"
+                  value={
+                    form.careerInterests ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'careerInterests',
+                      value
+                    )
+                  }
+                />
+
+                <Input
+                  label="Preferred Activities"
+                  value={
+                    form.preferredActivities ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'preferredActivities',
+                      value
+                    )
+                  }
+                />
+
+              </div>
+
+              {/* TEACHER PLAN */}
+
+              <SectionTitle
+                title="Teacher Support Plan"
+              />
+
+              <TextArea
+                label="Recommended Support"
+                value={
+                  form.recommendedSupport ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'recommendedSupport',
+                    value
+                  )
+                }
+              />
+
+              <TextArea
+                label="Intervention Needed"
+                value={
+                  form.interventionNeeded ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'interventionNeeded',
+                    value
+                  )
+                }
+              />
+
+              <TextArea
+                label="Effective Strategies"
+                value={
+                  form.effectiveStrategies ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'effectiveStrategies',
+                    value
+                  )
+                }
+              />
+
+              <TextArea
+                label="Strategies to Avoid"
+                value={
+                  form.strategiesToAvoid ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'strategiesToAvoid',
+                    value
+                  )
+                }
+              />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+
+                <Input
+                  label="Short Term Goal"
+                  value={
+                    form.shortTermGoal ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'shortTermGoal',
+                      value
+                    )
+                  }
+                />
+
+                <Input
+                  label="Follow-up Date"
+                  type="date"
+                  value={
+                    form.followUpDate ||
+                    ''
+                  }
+                  onChange={(value) =>
+                    handleChange(
+                      'followUpDate',
+                      value
+                    )
+                  }
+                />
+
+              </div>
+
+              <TextArea
+                label="Teacher Notes"
+                value={
+                  form.teacherNotes ||
+                  ''
+                }
+                onChange={(value) =>
+                  handleChange(
+                    'teacherNotes',
+                    value
+                  )
+                }
+              />
+
+            </div>
+
+            {/* FOOTER */}
+
+            <div className="flex items-center justify-end gap-3 border-t border-gray-200 bg-gray-50 px-6 py-4">
+
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSave}
+                className="flex items-center gap-2 rounded-lg bg-gray-800 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-700"
+              >
+                <Save size={17} />
+
+                {
+                  editingStudent
+                    ? 'Update Student'
+                    : 'Save Student'
+                }
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* ===================================================
+          IMPORT MODAL
+      =================================================== */}
+
+      {importOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+
+          <div className="max-h-[95vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+
+            {/* HEADER */}
+
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+
+              <div className="flex items-center gap-3">
+
+                <div className="rounded-lg bg-gray-100 p-2">
+                  <FileSpreadsheet
+                    size={20}
+                    className="text-gray-700"
+                  />
+                </div>
+
+                <div>
+
+                  <h2 className="text-lg font-bold text-gray-800">
+                    Import Students from Excel
+                  </h2>
+
+                  <p className="text-xs text-gray-500">
+                    Import students from an Excel spreadsheet
+                  </p>
+
+                </div>
+
+              </div>
+
+              <button
+                type="button"
+                disabled={importing}
+                onClick={closeImport}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+              >
+                <X size={20} />
+              </button>
+
+            </div>
+
+            {/* BODY */}
+
+            <div className="max-h-[calc(95vh-150px)] overflow-y-auto p-6">
+
+              <div className="mb-5 rounded-lg border border-gray-200 bg-gray-50 p-4">
+
+                <div className="flex items-start gap-3">
+
+                  <FileSpreadsheet
+                    size={20}
+                    className="mt-0.5 text-gray-600"
+                  />
+
+                  <div>
+
+                    <p className="text-sm font-semibold text-gray-800">
+                      Supported Excel format
+                    </p>
+
+                    <p className="mt-1 text-xs leading-5 text-gray-600">
+                      The importer automatically searches the worksheet for the student header row.
+                    </p>
+
+                    <ul className="mt-2 space-y-1 text-xs text-gray-600">
+
+                      <li>
+                        • رقم التلميذ / Massar Code
+                      </li>
+
+                      <li>
+                        • إسم التلميذ / Arabic Name
+                      </li>
+
+                      <li>
+                        • تاريخ الإزدياد / Date of Birth
+                      </li>
+
+                    </ul>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* CLASS */}
+
+              <div className="mb-5">
+
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Import students into
+                </label>
+
+                <select
+                  value={importClassId}
+                  onChange={(event) =>
+                    setImportClassId(
+                      event.target.value
+                    )
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-gray-500"
+                >
+
+                  <option value="">
+                    Select class...
+                  </option>
+
+                  {classes.map(
+                    (classRoom) => (
+                      <option
+                        key={
+                          classRoom.id
+                        }
+                        value={
+                          classRoom.id
+                        }
                       >
-                        الاسم بالعربية
-                      </th>
+                        {
+                          classRoom.name
+                        }
+                      </option>
+                    )
+                  )}
 
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                        Date of Birth
-                      </th>
-                    </tr>
-                  </thead>
+                </select>
 
-                  <tbody className="divide-y divide-slate-100">
-                    {importStudents.map(
-                      (
-                        student,
-                        index
-                      ) => (
-                        <tr
-                          key={`${student.massarCode}-${index}`}
-                        >
-                          <td className="px-3 py-2 text-slate-400">
-                            {index + 1}
-                          </td>
-
-                          <td className="px-3 py-2 font-medium text-slate-700">
-                            {student.massarCode ||
-                              '—'}
-                          </td>
-
-                          <td
-                            className="px-3 py-2 text-right font-medium text-slate-700"
-                            dir="rtl"
-                            lang="ar"
-                          >
-                            {student.nameAr ||
-                              '—'}
-                          </td>
-
-                          <td className="px-3 py-2 text-slate-600">
-                            {formatDate(
-                              student.dateOfBirth
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    )}
-                  </tbody>
-                </table>
               </div>
+
+              {/* FILE */}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleExcelFile}
+                className="hidden"
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  fileInputRef.current?.click()
+                }
+                className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-sm font-medium text-gray-600 transition hover:border-gray-500 hover:bg-gray-100"
+              >
+
+                <Upload size={20} />
+
+                {
+                  importFileName ||
+                  'Choose Excel File'
+                }
+
+              </button>
+
+              {/* ERROR */}
+
+              {importError && (
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {importError}
+                </div>
+              )}
+
+              {/* PREVIEW */}
+
+              {importStudents.length > 0 && (
+                <div className="mt-6">
+
+                  <div className="mb-3">
+
+                    <p className="text-sm font-semibold text-gray-800">
+                      Preview
+                    </p>
+
+                    <p className="text-xs text-gray-500">
+                      {
+                        importStudents.length
+                      } student(s) found
+                    </p>
+
+                  </div>
+
+                  <div className="max-h-80 overflow-auto rounded-lg border border-gray-200">
+
+                    <table className="w-full text-sm">
+
+                      <thead className="sticky top-0 bg-gray-50">
+
+                        <tr>
+
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">
+                            #
+                          </th>
+
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">
+                            Massar Code
+                          </th>
+
+                          <th
+                            className="px-3 py-2 text-right text-xs font-semibold text-gray-500"
+                            dir="rtl"
+                          >
+                            الاسم بالعربية
+                          </th>
+
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">
+                            Date of Birth
+                          </th>
+
+                        </tr>
+
+                      </thead>
+
+                      <tbody className="divide-y divide-gray-100">
+
+                        {importStudents.map(
+                          (
+                            student,
+                            index
+                          ) => (
+                            <tr
+                              key={`${student.massarCode}-${index}`}
+                            >
+
+                              <td className="px-3 py-2 text-gray-400">
+                                {
+                                  index + 1
+                                }
+                              </td>
+
+                              <td className="px-3 py-2 font-medium text-gray-700">
+                                {
+                                  student.massarCode ||
+                                  '—'
+                                }
+                              </td>
+
+                              <td
+                                dir="rtl"
+                                lang="ar"
+                                className="px-3 py-2 text-right font-medium text-gray-700"
+                              >
+                                {
+                                  student.nameAr ||
+                                  '—'
+                                }
+                              </td>
+
+                              <td className="px-3 py-2 text-gray-600">
+                                {
+                                  formatDate(
+                                    student.dateOfBirth
+                                  )
+                                }
+                              </td>
+
+                            </tr>
+                          )
+                        )}
+
+                      </tbody>
+
+                    </table>
+
+                  </div>
+
+                </div>
+              )}
+
             </div>
-          )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              disabled={importing}
-              onClick={() =>
-                setImportOpen(false)
-              }
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-            >
-              <X size={16} />
-              Cancel
-            </button>
+            {/* FOOTER */}
 
-            <button
-              type="button"
-              disabled={
-                importing ||
-                !importStudents.length ||
-                !importClassId
-              }
-              onClick={
-                confirmImport
-              }
-              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              <Upload size={16} />
+            <div className="flex items-center justify-end gap-3 border-t border-gray-200 bg-gray-50 px-6 py-4">
 
-              {importing
-                ? 'Importing...'
-                : `Import ${importStudents.length} Students`}
-            </button>
+              <button
+                type="button"
+                disabled={importing}
+                onClick={closeImport}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  importing ||
+                  !importStudents.length ||
+                  !importClassId
+                }
+                onClick={confirmImport}
+                className="inline-flex items-center gap-2 rounded-lg bg-gray-800 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+
+                <Upload size={17} />
+
+                {importing
+                  ? 'Importing...'
+                  : `Import ${importStudents.length} Students`}
+
+              </button>
+
+            </div>
+
           </div>
+
         </div>
-      </Modal>
+      )}
 
-      {/* =================================================
-          CREATE CLASS MODAL
-      ================================================= */}
-
-      <Modal
-        open={createClassOpen}
-        title="Create New Class"
-        onClose={() =>
-          setCreateClassOpen(false)
-        }
-      >
-        <div className="space-y-4">
-          <Field label="Level">
-            <select
-              value={
-                newClassGrade
-              }
-              onChange={(event) =>
-                setNewClassGrade(
-                  event.target.value
-                )
-              }
-              className="form-select"
-            >
-              <option value="1APIC">
-                1APIC
-              </option>
-
-              <option value="2APIC">
-                2APIC
-              </option>
-
-              <option value="3APIC">
-                3APIC
-              </option>
-            </select>
-          </Field>
-
-          <Field label="Academic Year">
-            <input
-              value={
-                newClassAcademicYear
-              }
-              onChange={(event) =>
-                setNewClassAcademicYear(
-                  event.target.value
-                )
-              }
-              placeholder="2026/2027"
-              className="form-input"
-            />
-          </Field>
-
-          <Field label="Class Name">
-            <input
-              value={
-                newClassName
-              }
-              onChange={(event) =>
-                setNewClassName(
-                  event.target.value
-                )
-              }
-              placeholder="Example: 11"
-              className="form-input"
-            />
-          </Field>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() =>
-                setCreateClassOpen(
-                  false
-                )
-              }
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-
-            <button
-              type="button"
-              onClick={
-                createClassFromImport
-              }
-              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700"
-            >
-              <Plus size={16} />
-              Create Class
-            </button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }
 
 /* =====================================================
-   FORM SECTION
+   SECTION TITLE
 ===================================================== */
 
-function FormSection({
+function SectionTitle({
   title,
-  children,
 }: {
   title: string;
-  children: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-      <h3 className="mb-4 text-sm font-semibold text-slate-700">
+    <div className="mb-4 mt-8 first:mt-0">
+
+      <h3 className="border-b border-gray-200 pb-2 text-sm font-bold uppercase tracking-wide text-gray-700">
         {title}
       </h3>
 
-      <div className="space-y-4">
-        {children}
-      </div>
     </div>
   );
 }
 
 /* =====================================================
-   TEXT FIELD
+   INPUT
 ===================================================== */
 
-function TextField({
+function Input({
   label,
   value,
   onChange,
+  type = 'text',
+  dir,
+  placeholder,
 }: {
   label: string;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (
+    value: string
+  ) => void;
+  type?: string;
+  dir?: 'ltr' | 'rtl';
+  placeholder?: string;
 }) {
   return (
-    <Field label={label}>
+    <div>
+
+      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+        {label}
+      </label>
+
       <input
+        type={type}
         value={value}
-        onChange={(event) =>
+        dir={dir}
+        placeholder={placeholder}
+        onChange={(e) =>
           onChange(
-            event.target.value
+            e.target.value
           )
         }
-        className="form-input"
+        className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm outline-none transition focus:border-gray-500 focus:bg-white"
       />
-    </Field>
+
+    </div>
   );
 }
 
@@ -2377,39 +3095,44 @@ function TextField({
    TEXT AREA
 ===================================================== */
 
-function TextAreaField({
+function TextArea({
   label,
   value,
   onChange,
-  placeholder,
 }: {
   label: string;
   value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
+  onChange: (
+    value: string
+  ) => void;
 }) {
   return (
-    <Field label={label}>
+    <div className="mt-4">
+
+      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+        {label}
+      </label>
+
       <textarea
         value={value}
-        onChange={(event) =>
+        onChange={(e) =>
           onChange(
-            event.target.value
+            e.target.value
           )
         }
-        placeholder={placeholder}
         rows={3}
-        className="form-input resize-none"
+        className="w-full resize-none rounded-lg border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm outline-none transition focus:border-gray-500 focus:bg-white"
       />
-    </Field>
+
+    </div>
   );
 }
 
 /* =====================================================
-   SELECT FIELD
+   SELECT
 ===================================================== */
 
-function SelectField({
+function Select({
   label,
   value,
   onChange,
@@ -2417,30 +3140,51 @@ function SelectField({
 }: {
   label: string;
   value: string;
-  onChange: (value: string) => void;
-  options: string[];
+  onChange: (
+    value: string
+  ) => void;
+  options: {
+    value: string;
+    label: string;
+  }[];
 }) {
   return (
-    <Field label={label}>
+    <div>
+
+      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+        {label}
+      </label>
+
       <select
         value={value}
-        onChange={(event) =>
+        onChange={(e) =>
           onChange(
-            event.target.value
+            e.target.value
           )
         }
-        className="form-select"
+        className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-gray-500"
       >
-        {options.map((option) => (
-          <option
-            key={option}
-            value={option}
-          >
-            {option}
-          </option>
-        ))}
+
+        {options.map(
+          (option) => (
+            <option
+              key={
+                option.value
+              }
+              value={
+                option.value
+              }
+            >
+              {
+                option.label
+              }
+            </option>
+          )
+        )}
+
       </select>
-    </Field>
+
+    </div>
   );
 }
 
@@ -2454,26 +3198,46 @@ function SkillSelect({
   onChange,
 }: {
   label: string;
-  value: SkillLevel;
-  onChange: (value: SkillLevel) => void;
+  value?: SkillLevel;
+  onChange: (
+    value: SkillLevel
+  ) => void;
 }) {
   return (
-    <SelectField
+    <Select
       label={label}
-      value={value}
+      value={
+        value ||
+        'Not assessed'
+      }
       onChange={(value) =>
         onChange(
           value as SkillLevel
         )
       }
-      options={[
+      options={options([
         'Strong',
         'Good',
         'Developing',
         'Needs Support',
         'Not assessed',
-      ]}
+      ])}
     />
+  );
+}
+
+/* =====================================================
+   OPTIONS
+===================================================== */
+
+function options(
+  values: string[]
+) {
+  return values.map(
+    (value) => ({
+      value,
+      label: value,
+    })
   );
 }
 
@@ -2491,7 +3255,9 @@ function formatDate(
   const parts =
     value.split('-');
 
-  if (parts.length !== 3) {
+  if (
+    parts.length !== 3
+  ) {
     return value;
   }
 

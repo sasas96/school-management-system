@@ -25,11 +25,21 @@ interface DataContextValue {
     React.SetStateAction<AppData>
   >;
 
-  importData: (incoming: AppData) => Promise<void>;
+  importData: (
+    incoming: AppData
+  ) => Promise<void>;
 
   resetToDemo: () => Promise<void>;
 
   clearAll: () => Promise<void>;
+
+  addStudent: (
+    student: Student
+  ) => Promise<void>;
+
+  updateStudent: (
+    student: Student
+  ) => Promise<void>;
 
   deleteStudent: (
     studentId: string
@@ -38,7 +48,6 @@ interface DataContextValue {
 
 const DataContext =
   createContext<DataContextValue | null>(null);
-
 
 /* =====================================================
    DATABASE MAPPERS
@@ -54,8 +63,7 @@ function studentToDb(
 
     name: student.name,
     name_ar: student.nameAr ?? null,
-    date_of_birth:
-      student.dateOfBirth || null,
+    date_of_birth: student.dateOfBirth || null,
     class_id: student.classId,
     gender: student.gender,
 
@@ -85,6 +93,7 @@ function studentToDb(
       student.firstLanguage ?? null,
     other_languages:
       student.otherLanguages ?? null,
+
     english_level:
       student.englishLevel ?? null,
     speaking_level:
@@ -190,8 +199,9 @@ function studentToDb(
   };
 }
 
-
-function studentFromDb(row: any): Student {
+function studentFromDb(
+  row: any
+): Student {
   return {
     id: row.id,
     massarCode: row.id,
@@ -228,6 +238,7 @@ function studentFromDb(row: any): Student {
       row.first_language ?? undefined,
     otherLanguages:
       row.other_languages ?? undefined,
+
     englishLevel:
       row.english_level ?? undefined,
     speakingLevel:
@@ -333,6 +344,9 @@ function studentFromDb(row: any): Student {
   };
 }
 
+/* =====================================================
+   CLASS MAPPERS
+===================================================== */
 
 function classToDb(
   item: ClassRoom,
@@ -347,16 +361,21 @@ function classToDb(
   };
 }
 
-
-function classFromDb(row: any): ClassRoom {
+function classFromDb(
+  row: any
+): ClassRoom {
   return {
     id: row.id,
     name: row.name,
     grade: row.grade,
-    academicYear: row.academic_year,
+    academicYear:
+      row.academic_year,
   };
 }
 
+/* =====================================================
+   ATTENDANCE MAPPERS
+===================================================== */
 
 function attendanceToDb(
   item: AttendanceRecord,
@@ -372,7 +391,6 @@ function attendanceToDb(
   };
 }
 
-
 function attendanceFromDb(
   row: any
 ): AttendanceRecord {
@@ -385,6 +403,9 @@ function attendanceFromDb(
   };
 }
 
+/* =====================================================
+   ASSESSMENT MAPPERS
+===================================================== */
 
 function assessmentToDb(
   item: AssessmentRecord,
@@ -405,7 +426,6 @@ function assessmentToDb(
   };
 }
 
-
 function assessmentFromDb(
   row: any
 ): AssessmentRecord {
@@ -413,7 +433,8 @@ function assessmentFromDb(
     id: row.id,
     studentId: row.student_id,
     classId: row.class_id,
-    academicYear: row.academic_year,
+    academicYear:
+      row.academic_year,
     date: row.date,
     name: row.name,
     type: row.type,
@@ -423,6 +444,9 @@ function assessmentFromDb(
   };
 }
 
+/* =====================================================
+   INTEGRATED ACTIVITY MAPPERS
+===================================================== */
 
 function activityToDb(
   item: IntegratedActivityRecord,
@@ -444,7 +468,6 @@ function activityToDb(
   };
 }
 
-
 function activityFromDb(
   row: any
 ): IntegratedActivityRecord {
@@ -452,7 +475,8 @@ function activityFromDb(
     id: row.id,
     studentId: row.student_id,
     classId: row.class_id,
-    academicYear: row.academic_year,
+    academicYear:
+      row.academic_year,
     term: row.term,
     date: row.date,
     discipline: Number(row.discipline),
@@ -463,6 +487,21 @@ function activityFromDb(
   };
 }
 
+/* =====================================================
+   EMPTY DATA
+===================================================== */
+
+function emptyData(): AppData {
+  return {
+    schoolName: '',
+    teacherName: '',
+    classes: [],
+    students: [],
+    attendance: [],
+    assessments: [],
+    integratedActivities: [],
+  };
+}
 
 /* =====================================================
    LOAD FROM SUPABASE
@@ -470,14 +509,14 @@ function activityFromDb(
 
 async function loadRemoteData(): Promise<AppData> {
   const {
-    data: {
-      user,
-    },
+    data: { user },
     error: userError,
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    throw new Error('No authenticated user');
+    throw new Error(
+      'No authenticated user'
+    );
   }
 
   const [
@@ -533,67 +572,64 @@ async function loadRemoteData(): Promise<AppData> {
     teacherName: '',
 
     classes:
-      (classesResult.data ?? []).map(
-        classFromDb
-      ),
+      (classesResult.data ?? [])
+        .map(classFromDb),
 
     students:
-      (studentsResult.data ?? []).map(
-        studentFromDb
-      ),
+      (studentsResult.data ?? [])
+        .map(studentFromDb),
 
     attendance:
-      (attendanceResult.data ?? []).map(
-        attendanceFromDb
-      ),
+      (attendanceResult.data ?? [])
+        .map(attendanceFromDb),
 
     assessments:
-      (assessmentsResult.data ?? []).map(
-        assessmentFromDb
-      ),
+      (assessmentsResult.data ?? [])
+        .map(assessmentFromDb),
 
     integratedActivities:
-      (activitiesResult.data ?? []).map(
-        activityFromDb
-      ),
+      (activitiesResult.data ?? [])
+        .map(activityFromDb),
   };
 }
 
-
 /* =====================================================
-   SAVE ENTIRE DATASET
+   SAVE DATA
 ===================================================== */
 
 async function saveRemoteData(
   data: AppData
 ) {
   const {
-    data: {
-      user,
-    },
+    data: { user },
     error,
   } = await supabase.auth.getUser();
 
   if (error || !user) {
-    throw new Error('No authenticated user');
+    throw new Error(
+      'No authenticated user'
+    );
   }
 
   const userId = user.id;
 
-  const students = data.students.map(
-    (item) =>
-      studentToDb(item, userId)
-  );
+  const students =
+    data.students.map(
+      (item) =>
+        studentToDb(item, userId)
+    );
 
-  const classes = data.classes.map(
-    (item) =>
-      classToDb(item, userId)
-  );
+  const classes =
+    data.classes.map(
+      (item) =>
+        classToDb(item, userId)
+    );
 
-  const attendance = data.attendance.map(
-    (item) =>
-      attendanceToDb(item, userId)
-  );
+  const attendance =
+    data.attendance.map(
+      (item) =>
+        attendanceToDb(item, userId)
+    );
 
   const assessments =
     data.assessments.map(
@@ -607,27 +643,78 @@ async function saveRemoteData(
         activityToDb(item, userId)
     );
 
+  /* ===================================================
+     EXISTING IDS
+  =================================================== */
 
-  /*
-   * Delete records that no longer exist locally.
-   */
+  const [
+    existingStudents,
+    existingClasses,
+    existingAttendance,
+    existingAssessments,
+    existingActivities,
+  ] = await Promise.all([
+    supabase
+      .from('students')
+      .select('id')
+      .eq('user_id', userId),
+
+    supabase
+      .from('classes')
+      .select('id')
+      .eq('user_id', userId),
+
+    supabase
+      .from('attendance')
+      .select('id')
+      .eq('user_id', userId),
+
+    supabase
+      .from('assessments')
+      .select('id')
+      .eq('user_id', userId),
+
+    supabase
+      .from('integrated_activities')
+      .select('id')
+      .eq('user_id', userId),
+  ]);
+
+  if (existingStudents.error)
+    throw existingStudents.error;
+
+  if (existingClasses.error)
+    throw existingClasses.error;
+
+  if (existingAttendance.error)
+    throw existingAttendance.error;
+
+  if (existingAssessments.error)
+    throw existingAssessments.error;
+
+  if (existingActivities.error)
+    throw existingActivities.error;
 
   const current = {
-    students: data.students.map(
-      (x) => x.id
-    ),
+    students:
+      data.students.map(
+        (x) => x.id
+      ),
 
-    classes: data.classes.map(
-      (x) => x.id
-    ),
+    classes:
+      data.classes.map(
+        (x) => x.id
+      ),
 
-    attendance: data.attendance.map(
-      (x) => x.id
-    ),
+    attendance:
+      data.attendance.map(
+        (x) => x.id
+      ),
 
-    assessments: data.assessments.map(
-      (x) => x.id
-    ),
+    assessments:
+      data.assessments.map(
+        (x) => x.id
+      ),
 
     activities:
       data.integratedActivities.map(
@@ -635,105 +722,49 @@ async function saveRemoteData(
       ),
   };
 
-
-  const existingStudents =
-    await supabase
-      .from('students')
-      .select('id')
-      .eq('user_id', userId);
-
-  if (existingStudents.error)
-    throw existingStudents.error;
-
-
-  const existingClasses =
-    await supabase
-      .from('classes')
-      .select('id')
-      .eq('user_id', userId);
-
-  if (existingClasses.error)
-    throw existingClasses.error;
-
-
-  const existingAttendance =
-    await supabase
-      .from('attendance')
-      .select('id')
-      .eq('user_id', userId);
-
-  if (existingAttendance.error)
-    throw existingAttendance.error;
-
-
-  const existingAssessments =
-    await supabase
-      .from('assessments')
-      .select('id')
-      .eq('user_id', userId);
-
-  if (existingAssessments.error)
-    throw existingAssessments.error;
-
-
-  const existingActivities =
-    await supabase
-      .from('integrated_activities')
-      .select('id')
-      .eq('user_id', userId);
-
-  if (existingActivities.error)
-    throw existingActivities.error;
-
-
-  /*
-   * Remove missing rows.
-   */
-
   const studentIds =
-    existingStudents.data
-      ?.map((x) => x.id)
+    (existingStudents.data ?? [])
+      .map((x) => x.id)
       .filter(
         (id) =>
           !current.students.includes(id)
-      ) ?? [];
-
+      );
 
   const classIds =
-    existingClasses.data
-      ?.map((x) => x.id)
+    (existingClasses.data ?? [])
+      .map((x) => x.id)
       .filter(
         (id) =>
           !current.classes.includes(id)
-      ) ?? [];
-
+      );
 
   const attendanceIds =
-    existingAttendance.data
-      ?.map((x) => x.id)
+    (existingAttendance.data ?? [])
+      .map((x) => x.id)
       .filter(
         (id) =>
           !current.attendance.includes(id)
-      ) ?? [];
-
+      );
 
   const assessmentIds =
-    existingAssessments.data
-      ?.map((x) => x.id)
+    (existingAssessments.data ?? [])
+      .map((x) => x.id)
       .filter(
         (id) =>
           !current.assessments.includes(id)
-      ) ?? [];
-
+      );
 
   const activityIds =
-    existingActivities.data
-      ?.map((x) => x.id)
+    (existingActivities.data ?? [])
+      .map((x) => x.id)
       .filter(
         (id) =>
           !current.activities.includes(id)
-      ) ?? [];
+      );
 
+  /* ===================================================
+     DELETE REMOVED STUDENTS
+  =================================================== */
 
   if (studentIds.length > 0) {
     const result =
@@ -747,6 +778,9 @@ async function saveRemoteData(
       throw result.error;
   }
 
+  /* ===================================================
+     DELETE REMOVED CLASSES
+  =================================================== */
 
   if (classIds.length > 0) {
     const result =
@@ -760,6 +794,9 @@ async function saveRemoteData(
       throw result.error;
   }
 
+  /* ===================================================
+     DELETE REMOVED ATTENDANCE
+  =================================================== */
 
   if (attendanceIds.length > 0) {
     const result =
@@ -773,6 +810,9 @@ async function saveRemoteData(
       throw result.error;
   }
 
+  /* ===================================================
+     DELETE REMOVED ASSESSMENTS
+  =================================================== */
 
   if (assessmentIds.length > 0) {
     const result =
@@ -786,6 +826,9 @@ async function saveRemoteData(
       throw result.error;
   }
 
+  /* ===================================================
+     DELETE REMOVED ACTIVITIES
+  =================================================== */
 
   if (activityIds.length > 0) {
     const result =
@@ -799,12 +842,11 @@ async function saveRemoteData(
       throw result.error;
   }
 
+  /* ===================================================
+     UPSERT STUDENTS
+  =================================================== */
 
-  /*
-   * Upsert current data.
-   */
-
-  if (students.length) {
+  if (students.length > 0) {
     const result =
       await supabase
         .from('students')
@@ -814,8 +856,11 @@ async function saveRemoteData(
       throw result.error;
   }
 
+  /* ===================================================
+     UPSERT CLASSES
+  =================================================== */
 
-  if (classes.length) {
+  if (classes.length > 0) {
     const result =
       await supabase
         .from('classes')
@@ -825,8 +870,11 @@ async function saveRemoteData(
       throw result.error;
   }
 
+  /* ===================================================
+     UPSERT ATTENDANCE
+  =================================================== */
 
-  if (attendance.length) {
+  if (attendance.length > 0) {
     const result =
       await supabase
         .from('attendance')
@@ -836,8 +884,11 @@ async function saveRemoteData(
       throw result.error;
   }
 
+  /* ===================================================
+     UPSERT ASSESSMENTS
+  =================================================== */
 
-  if (assessments.length) {
+  if (assessments.length > 0) {
     const result =
       await supabase
         .from('assessments')
@@ -847,8 +898,11 @@ async function saveRemoteData(
       throw result.error;
   }
 
+  /* ===================================================
+     UPSERT ACTIVITIES
+  =================================================== */
 
-  if (activities.length) {
+  if (activities.length > 0) {
     const result =
       await supabase
         .from('integrated_activities')
@@ -859,9 +913,8 @@ async function saveRemoteData(
   }
 }
 
-
 /* =====================================================
-   PROVIDER
+   DATA PROVIDER
 ===================================================== */
 
 export function DataProvider({
@@ -870,23 +923,16 @@ export function DataProvider({
   children: React.ReactNode;
 }) {
   const [data, setDataState] =
-    useState<AppData>({
-      schoolName: '',
-      teacherName: '',
-      classes: [],
-      students: [],
-      attendance: [],
-      assessments: [],
-      integratedActivities: [],
-    });
+    useState<AppData>(
+      emptyData()
+    );
 
   const [loaded, setLoaded] =
     useState(false);
 
-
-  /*
-   * Load user's data when authenticated.
-   */
+  /* ===================================================
+     LOAD DATA
+  =================================================== */
 
   useEffect(() => {
     let mounted = true;
@@ -894,22 +940,11 @@ export function DataProvider({
     async function load() {
       try {
         const {
-          data: {
-            session,
-          },
+          data: { session },
         } =
           await supabase.auth.getSession();
 
-        console.log(
-          'CURRENT SESSION:',
-          session
-        );
-
         if (!session) {
-          console.error(
-            'NO AUTHENTICATED SESSION'
-          );
-
           if (mounted) {
             setLoaded(true);
           }
@@ -917,18 +952,8 @@ export function DataProvider({
           return;
         }
 
-        console.log(
-          'AUTHENTICATED USER:',
-          session.user.id
-        );
-
         const remote =
           await loadRemoteData();
-
-        console.log(
-          'REMOTE DATA LOADED:',
-          remote
-        );
 
         if (mounted) {
           setDataState(remote);
@@ -953,26 +978,16 @@ export function DataProvider({
     };
   }, []);
 
-
-  /*
-   * Save whenever application data changes.
-   */
+  /* ===================================================
+     AUTO SYNC
+  =================================================== */
 
   useEffect(() => {
     if (!loaded) return;
 
     async function sync() {
       try {
-        console.log(
-          'SYNCING DATA TO SUPABASE:',
-          data
-        );
-
         await saveRemoteData(data);
-
-        console.log(
-          'SUPABASE SYNC SUCCESS'
-        );
       } catch (error) {
         console.error(
           'Failed to save Supabase data:',
@@ -984,21 +999,20 @@ export function DataProvider({
     sync();
   }, [data, loaded]);
 
+  /* ===================================================
+     SET DATA
+  =================================================== */
 
-  /*
-   * Keep existing setData API.
-   */
+  const setData:
+    React.Dispatch<
+      React.SetStateAction<AppData>
+    > = (value) => {
+      setDataState(value);
+    };
 
-  const setData: React.Dispatch<
-    React.SetStateAction<AppData>
-  > = (value) => {
-    setDataState(value);
-  };
-
-
-  /*
-   * Import.
-   */
+  /* ===================================================
+     IMPORT DATA
+  =================================================== */
 
   const importData = async (
     incoming: AppData
@@ -1006,38 +1020,71 @@ export function DataProvider({
     setDataState(incoming);
   };
 
-
-  /*
-   * Demo data.
-   */
+  /* ===================================================
+     RESET DEMO
+  =================================================== */
 
   const resetToDemo = async () => {
-    const demo = demoData();
+    const demo =
+      demoData();
 
     setDataState(demo);
   };
 
-
-  /*
-   * Clear everything.
-   */
+  /* ===================================================
+     CLEAR ALL
+  =================================================== */
 
   const clearAll = async () => {
-    setDataState({
-      schoolName: '',
-      teacherName: '',
-      classes: [],
-      students: [],
-      attendance: [],
-      assessments: [],
-      integratedActivities: [],
-    });
+    setDataState(
+      emptyData()
+    );
   };
 
+  /* ===================================================
+     ADD STUDENT
+  =================================================== */
 
-  /*
-   * Delete student and related records.
-   */
+  const addStudent = async (
+    student: Student
+  ) => {
+    setDataState(
+      (currentData) => ({
+        ...currentData,
+
+        students: [
+          ...currentData.students,
+          student,
+        ],
+      })
+    );
+  };
+
+  /* ===================================================
+     UPDATE STUDENT
+  =================================================== */
+
+  const updateStudent = async (
+    student: Student
+  ) => {
+    setDataState(
+      (currentData) => ({
+        ...currentData,
+
+        students:
+          currentData.students.map(
+            (existingStudent) =>
+              existingStudent.id === student.id
+                ? student
+                : existingStudent
+          ),
+      })
+    );
+  };
+
+  /* ===================================================
+     DELETE STUDENT
+  =================================================== */
 
   const deleteStudent = async (
     studentId: string
@@ -1075,6 +1122,9 @@ export function DataProvider({
     );
   };
 
+  /* ===================================================
+     CONTEXT VALUE
+  =================================================== */
 
   const value =
     useMemo<DataContextValue>(
@@ -1084,11 +1134,12 @@ export function DataProvider({
         importData,
         resetToDemo,
         clearAll,
+        addStudent,
+        updateStudent,
         deleteStudent,
       }),
       [data]
     );
-
 
   return (
     <DataContext.Provider
@@ -1099,6 +1150,9 @@ export function DataProvider({
   );
 }
 
+/* =====================================================
+   USE DATA
+===================================================== */
 
 export function useData() {
   const context =
