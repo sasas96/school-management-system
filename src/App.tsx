@@ -12,6 +12,7 @@ import { StudentsPage } from '@/pages/StudentsPage';
 import { AttendancePage } from '@/pages/AttendancePage';
 import { AssessmentsPage } from '@/pages/AssessmentsPage';
 import { ReportsPage } from '@/pages/ReportsPage';
+import AcademicCalendarPage from '@/pages/AcademicCalendarPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
 import { BackupBar } from '@/components/BackupBar';
@@ -21,6 +22,7 @@ import {
   School,
   Users,
   CalendarCheck,
+  CalendarDays,
   ClipboardList,
   FileText,
   GraduationCap,
@@ -38,6 +40,7 @@ type PageId =
   | 'attendance'
   | 'assessments'
   | 'reports'
+  | 'calendar'
   | 'settings';
 
 type NavItem = {
@@ -78,6 +81,11 @@ const NAV: NavItem[] = [
     icon: FileText,
   },
   {
+    id: 'calendar',
+    label: 'Academic Calendar',
+    icon: CalendarDays,
+  },
+  {
     id: 'settings',
     label: 'Settings',
     icon: Settings,
@@ -85,17 +93,13 @@ const NAV: NavItem[] = [
 ];
 
 function App() {
-  const [page, setPage] =
-    useState<PageId>('dashboard');
+  const [page, setPage] = useState<PageId>('dashboard');
 
-  const [mobileOpen, setMobileOpen] =
-    useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const [session, setSession] =
-    useState<Session | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
 
-  const [authLoading, setAuthLoading] =
-    useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -154,6 +158,9 @@ function App() {
       case 'reports':
         return <ReportsPage />;
 
+      case 'calendar':
+        return <AcademicCalendarPage />;
+
       case 'settings':
         return <SettingsPage />;
 
@@ -163,9 +170,7 @@ function App() {
   }
 
   const currentPage =
-    NAV.find(
-      (item) => item.id === page
-    )?.label ?? 'Dashboard';
+    NAV.find((item) => item.id === page)?.label ?? 'Dashboard';
 
   function handleNavigation(id: PageId) {
     setPage(id);
@@ -179,7 +184,6 @@ function App() {
         {/* Logo / Brand */}
 
         <div className="border-b border-slate-100 px-5 py-6">
-
           <div className="flex items-center gap-3">
 
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-md shadow-sky-600/20">
@@ -202,7 +206,6 @@ function App() {
             </div>
 
           </div>
-
         </div>
 
         {/* Navigation */}
@@ -217,8 +220,7 @@ function App() {
 
             {NAV.map((item) => {
 
-              const active =
-                page === item.id;
+              const active = page === item.id;
 
               const Icon = item.icon;
 
@@ -226,11 +228,7 @@ function App() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() =>
-                    handleNavigation(
-                      item.id
-                    )
-                  }
+                  onClick={() => handleNavigation(item.id)}
                   className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all duration-200 ${
                     active
                       ? 'bg-sky-50 font-semibold text-sky-700'
@@ -304,7 +302,6 @@ function App() {
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-100"
           >
             <LogOut size={16} />
-
             Sign out
           </button>
 
@@ -364,18 +361,14 @@ function App() {
 
           <div
             className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"
-            onClick={() =>
-              setMobileOpen(false)
-            }
+            onClick={() => setMobileOpen(false)}
           />
 
           <aside className="absolute inset-y-0 left-0 w-72 overflow-hidden bg-white shadow-2xl">
 
             <button
               type="button"
-              onClick={() =>
-                setMobileOpen(false)
-              }
+              onClick={() => setMobileOpen(false)}
               className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
               aria-label="Close menu"
             >
@@ -403,9 +396,7 @@ function App() {
 
               <button
                 type="button"
-                onClick={() =>
-                  setMobileOpen(true)
-                }
+                onClick={() => setMobileOpen(true)}
                 className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
                 aria-label="Open menu"
               >
