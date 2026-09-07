@@ -13,6 +13,7 @@ import type {
   AttendanceRecord,
   AssessmentRecord,
   IntegratedActivityRecord,
+  DiagnosticTestRecord,
 } from '@/types';
 
 import { supabase } from '@/lib/supabase';
@@ -487,6 +488,43 @@ function activityFromDb(
   };
 }
 
+
+/* =====================================================
+   DIAGNOSTIC TEST MAPPERS
+===================================================== */
+
+function diagnosticToDb(
+  item: DiagnosticTestRecord,
+  userId: string
+) {
+  return {
+    id: item.id,
+    user_id: userId,
+    student_id: item.studentId,
+    class_id: item.classId,
+    academic_year: item.academicYear,
+    date: item.date,
+    term: item.term,
+    score: item.score,
+    max_score: item.maxScore,
+  };
+}
+
+function diagnosticFromDb(
+  row: any
+): DiagnosticTestRecord {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    classId: row.class_id,
+    academicYear: row.academic_year,
+    date: row.date,
+    term: row.term,
+    score: Number(row.score),
+    maxScore: Number(row.max_score),
+  };
+}
+
 /* =====================================================
    EMPTY DATA
 ===================================================== */
@@ -500,6 +538,7 @@ function emptyData(): AppData {
     attendance: [],
     assessments: [],
     integratedActivities: [],
+    diagnosticTests: [],
   };
 }
 
@@ -525,6 +564,7 @@ async function loadRemoteData(): Promise<AppData> {
     attendanceResult,
     assessmentsResult,
     activitiesResult,
+    diagnosticsResult,
   ] = await Promise.all([
     supabase
       .from('classes')
@@ -550,6 +590,11 @@ async function loadRemoteData(): Promise<AppData> {
       .from('integrated_activities')
       .select('*')
       .eq('user_id', user.id),
+
+    supabase
+      .from('diagnostic_tests')
+      .select('*')
+      .eq('user_id', user.id),
   ]);
 
   if (classesResult.error)
@@ -566,6 +611,9 @@ async function loadRemoteData(): Promise<AppData> {
 
   if (activitiesResult.error)
     throw activitiesResult.error;
+
+  if (diagnosticsResult.error)
+    throw diagnosticsResult.error;
 
   return {
     schoolName: '',
@@ -590,6 +638,10 @@ async function loadRemoteData(): Promise<AppData> {
     integratedActivities:
       (activitiesResult.data ?? [])
         .map(activityFromDb),
+
+    diagnosticTests:
+      (diagnosticsResult.data ?? [])
+        .map(diagnosticFromDb),
   };
 }
 
@@ -643,6 +695,12 @@ async function saveRemoteData(
         activityToDb(item, userId)
     );
 
+  const diagnostics =
+    (data.diagnosticTests ?? []).map(
+      (item) =>
+        diagnosticToDb(item, userId)
+    );
+
   /* ===================================================
      EXISTING IDS
   =================================================== */
@@ -653,6 +711,7 @@ async function saveRemoteData(
     existingAttendance,
     existingAssessments,
     existingActivities,
+    existingDiagnostics,
   ] = await Promise.all([
     supabase
       .from('students')
@@ -678,6 +737,11 @@ async function saveRemoteData(
       .from('integrated_activities')
       .select('id')
       .eq('user_id', userId),
+
+    supabase
+      .from('diagnostic_tests')
+      .select('id')
+      .eq('user_id', userId),
   ]);
 
   if (existingStudents.error)
@@ -694,6 +758,9 @@ async function saveRemoteData(
 
   if (existingActivities.error)
     throw existingActivities.error;
+
+  if (existingDiagnostics.error)
+    throw existingDiagnostics.error;
 
   const current = {
     students:
@@ -718,6 +785,11 @@ async function saveRemoteData(
 
     activities:
       data.integratedActivities.map(
+        (x) => x.id
+      ),
+
+    diagnostics:
+      (data.diagnosticTests ?? []).map(
         (x) => x.id
       ),
   };
@@ -760,6 +832,14 @@ async function saveRemoteData(
       .filter(
         (id) =>
           !current.activities.includes(id)
+      );
+
+  const diagnosticIds =
+    (existingDiagnostics.data ?? [])
+      .map((x) => x.id)
+      .filter(
+        (id) =>
+          !current.diagnostics.includes(id)
       );
 
   /* ===================================================
@@ -821,6 +901,22 @@ async function saveRemoteData(
         .delete()
         .eq('user_id', userId)
         .in('id', assessmentIds);
+
+    if (result.error)
+      throw result.error;
+  }
+
+  /* ===================================================
+     DELETE REMOVED DIAGNOSTIC TESTS
+  =================================================== */
+
+  if (diagnosticIds.length > 0) {
+    const result =
+      await supabase
+        .from('diagnostic_tests')
+        .delete()
+        .eq('user_id', userId)
+        .in('id', diagnosticIds);
 
     if (result.error)
       throw result.error;
@@ -907,6 +1003,20 @@ async function saveRemoteData(
       await supabase
         .from('integrated_activities')
         .upsert(activities);
+
+    if (result.error)
+      throw result.error;
+  }
+
+  /* ===================================================
+     UPSERT DIAGNOSTIC TESTS
+  =================================================== */
+
+  if (diagnostics.length > 0) {
+    const result =
+      await supabase
+        .from('diagnostic_tests')
+        .upsert(diagnostics);
 
     if (result.error)
       throw result.error;
@@ -1116,6 +1226,13 @@ export function DataProvider({
           currentData.integratedActivities.filter(
             (activity) =>
               activity.studentId !==
+              studentId
+          ),
+
+        diagnosticTests:
+          (currentData.diagnosticTests ?? []).filter(
+            (diagnostic) =>
+              diagnostic.studentId !==
               studentId
           ),
       })

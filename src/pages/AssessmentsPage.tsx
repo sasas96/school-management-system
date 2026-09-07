@@ -9,6 +9,7 @@ import { useData } from '@/store/DataContext';
 import type {
   AssessmentRecord,
   IntegratedActivityRecord,
+  DiagnosticTestRecord,
   OfficialAssessment,
   Term,
 } from '@/types';
@@ -41,7 +42,8 @@ type IntegratedDraft = Record<
 
 type AssessmentSelection =
   | OfficialAssessment
-  | 'Integrated Activities';
+  | 'Integrated Activities'
+  | 'Diagnostic Test';
 
 /*
  * =====================================================
@@ -154,6 +156,16 @@ export function AssessmentsPage() {
   const [saved, setSaved] =
     useState(false);
 
+  type AssessmentExportChoice =
+    | 'all'
+    | 'Quiz 1'
+    | 'Quiz 2'
+    | 'Global Test'
+    | 'Integrated Activities';
+
+  const [exportChoice, setExportChoice] =
+    useState<AssessmentExportChoice>('all');
+
   /*
    * ===================================================
    * DATA
@@ -166,8 +178,14 @@ export function AssessmentsPage() {
   const integratedActivities =
     data.integratedActivities ?? [];
 
+  const diagnosticTests =
+    data.diagnosticTests ?? [];
+
   const isIntegrated =
     assessmentName === 'Integrated Activities';
+
+  const isDiagnostic =
+    assessmentName === 'Diagnostic Test';
 
   const selectedAssessment =
     ASSESSMENTS.find(
@@ -176,7 +194,9 @@ export function AssessmentsPage() {
     );
 
   const maxScore =
-    selectedAssessment?.maxScore ?? 20;
+    isDiagnostic
+      ? 20
+      : selectedAssessment?.maxScore ?? 20;
 
   const selectedClass =
     classes.find(
@@ -234,7 +254,7 @@ export function AssessmentsPage() {
    */
 
   useEffect(() => {
-    if (isIntegrated) {
+    if (isIntegrated || isDiagnostic) {
       return;
     }
 
@@ -271,6 +291,7 @@ export function AssessmentsPage() {
     term,
     assessmentName,
     isIntegrated,
+    isDiagnostic,
   ]);
 
   /*
@@ -330,6 +351,47 @@ export function AssessmentsPage() {
     term,
     date,
     isIntegrated,
+  ]);
+
+
+  /*
+   * ===================================================
+   * LOAD DIAGNOSTIC TEST
+   * ===================================================
+   */
+
+  useEffect(() => {
+    if (!isDiagnostic) {
+      return;
+    }
+
+    const newDraft: ScoreDraft = {};
+
+    for (const student of classStudents) {
+      const existing =
+        diagnosticTests.find(
+          (diagnostic) =>
+            diagnostic.studentId === student.id &&
+            diagnostic.classId === classId &&
+            diagnostic.academicYear === academicYear &&
+            diagnostic.term === term
+        );
+
+      newDraft[student.id] =
+        existing !== undefined
+          ? String(existing.score)
+          : '';
+    }
+
+    setDraft(newDraft);
+    setSaved(false);
+  }, [
+    classStudents,
+    diagnosticTests,
+    classId,
+    academicYear,
+    term,
+    isDiagnostic,
   ]);
 
   /*
@@ -617,6 +679,109 @@ export function AssessmentsPage() {
 
     /*
      * =================================================
+     * DIAGNOSTIC TEST
+     * =================================================
+     */
+
+    if (isDiagnostic) {
+      const errors: string[] = [];
+      const records: DiagnosticTestRecord[] = [];
+      const idBase = Date.now();
+
+      for (
+        let index = 0;
+        index < classStudents.length;
+        index++
+      ) {
+        const student = classStudents[index];
+        const raw = draft[student.id];
+
+        if (
+          raw === undefined ||
+          raw.trim() === ''
+        ) {
+          continue;
+        }
+
+        const score = Number(raw);
+
+        if (
+          !Number.isFinite(score) ||
+          score < 0 ||
+          score > 20
+        ) {
+          errors.push(
+            `${student.name}: diagnostic score must be between 0 and 20`
+          );
+          continue;
+        }
+
+        const existing =
+          diagnosticTests.find(
+            (diagnostic) =>
+              diagnostic.studentId === student.id &&
+              diagnostic.classId === classId &&
+              diagnostic.academicYear === academicYear &&
+              diagnostic.term === term
+          );
+
+        records.push({
+          id:
+            existing?.id ??
+            `D-${idBase}-${index}`,
+          studentId: student.id,
+          classId,
+          academicYear,
+          date,
+          term,
+          score,
+          maxScore: 20,
+        });
+      }
+
+      if (errors.length > 0) {
+        alert(
+          'Please fix these errors:\n\n' +
+            errors.join('\n')
+        );
+        return;
+      }
+
+      if (records.length === 0) {
+        alert(
+          'No diagnostic scores entered to save.'
+        );
+        return;
+      }
+
+      setData((previous) => {
+        const current =
+          previous.diagnosticTests ?? [];
+
+        const kept = current.filter(
+          (diagnostic) =>
+            !(
+              diagnostic.classId === classId &&
+              diagnostic.academicYear === academicYear &&
+              diagnostic.term === term
+            )
+        );
+
+        return {
+          ...previous,
+          diagnosticTests: [
+            ...kept,
+            ...records,
+          ],
+        };
+      });
+
+      setSaved(true);
+      return;
+    }
+
+    /*
+     * =================================================
      * NORMAL ASSESSMENT
      * =================================================
      */
@@ -804,13 +969,348 @@ export function AssessmentsPage() {
     );
   };
 
+  const getDiagnosticScore = (
+    studentId: string
+  ) => {
+    const record =
+      diagnosticTests.find(
+        (diagnostic) =>
+          diagnostic.studentId === studentId &&
+          diagnostic.classId === classId &&
+          diagnostic.academicYear === academicYear &&
+          diagnostic.term === term
+      );
+
+    return record?.score ?? null;
+  };
+
   /*
    * ===================================================
    * PDF EXPORT
    * ===================================================
    */
 
-  const exportPDF = async () => {
+  /*
+   * ===================================================
+   * DIAGNOSTIC TEST PDF
+   * ===================================================
+   */
+
+  const exportDiagnosticPDF = async () => {
+    if (!classId) {
+      alert('Please select a class.');
+      return;
+    }
+
+    if (!academicYear) {
+      alert('This class has no academic year.');
+      return;
+    }
+
+    if (classStudents.length === 0) {
+      alert('This class has no students.');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      try {
+        const fontResponse = await fetch(
+          '/fonts/Amiri-Regular.ttf'
+        );
+
+        if (!fontResponse.ok) {
+          throw new Error(
+            'Amiri font could not be loaded.'
+          );
+        }
+
+        const fontBuffer =
+          await fontResponse.arrayBuffer();
+
+        const uint8Array =
+          new Uint8Array(fontBuffer);
+
+        let binary = '';
+        const chunkSize = 0x8000;
+
+        for (
+          let i = 0;
+          i < uint8Array.length;
+          i += chunkSize
+        ) {
+          binary += String.fromCharCode(
+            ...uint8Array.subarray(
+              i,
+              Math.min(
+                i + chunkSize,
+                uint8Array.length
+              )
+            )
+          );
+        }
+
+        doc.addFileToVFS(
+          'Amiri-Regular.ttf',
+          btoa(binary)
+        );
+
+        doc.addFont(
+          'Amiri-Regular.ttf',
+          'Amiri',
+          'normal'
+        );
+
+        doc.setFont('Amiri', 'normal');
+      } catch (fontError) {
+        console.error(
+          'Amiri font loading error:',
+          fontError
+        );
+
+        alert(
+          'Arabic font could not be loaded. Please make sure Amiri-Regular.ttf exists in public/fonts/.'
+        );
+        return;
+      }
+
+      const schoolName =
+        data.schoolName?.trim() ||
+        'School Name';
+
+      const teacherName =
+        data.teacherName?.trim() ||
+        'Teacher Name';
+
+      const pageWidth =
+        doc.internal.pageSize.getWidth();
+
+      doc.setFont('Amiri', 'normal');
+      doc.setFontSize(15);
+
+      doc.text(
+        'DIAGNOSTIC TEST RECORD',
+        pageWidth / 2,
+        14,
+        { align: 'center' }
+      );
+
+      doc.setFontSize(9);
+
+      doc.text(
+        `School: ${schoolName}`,
+        12,
+        25
+      );
+
+      doc.text(
+        `Teacher: ${teacherName}`,
+        12,
+        32
+      );
+
+      doc.text(
+        `Class: ${className}`,
+        12,
+        39
+      );
+
+      doc.text(
+        `Academic Year: ${academicYear}`,
+        pageWidth - 12,
+        25,
+        { align: 'right' }
+      );
+
+      doc.text(
+        `Term: ${term}`,
+        pageWidth - 12,
+        32,
+        { align: 'right' }
+      );
+
+      doc.text(
+        `Date: ${date}`,
+        pageWidth - 12,
+        39,
+        { align: 'right' }
+      );
+
+      doc.setDrawColor(180, 180, 180);
+      doc.setLineWidth(0.3);
+
+      doc.line(
+        12,
+        44,
+        pageWidth - 12,
+        44
+      );
+
+      const tableHead = [[
+        'N°',
+        'Massar Code',
+        'Student Name',
+        'Diagnostic Test /20',
+        'Percentage',
+      ]];
+
+      const tableBody =
+        classStudents.map(
+          (student, index) => {
+            const score =
+              getDiagnosticScore(
+                student.id
+              );
+
+            const percentage =
+              score !== null
+                ? `${(
+                    (score / 20) *
+                    100
+                  ).toFixed(1)}%`
+                : '';
+
+            return [
+              String(index + 1),
+              student.massarCode ?? '',
+              student.name,
+              score !== null
+                ? formatScoreOutOf(
+                    score,
+                    20
+                  )
+                : '',
+              percentage,
+            ];
+          }
+        );
+
+      autoTable(doc, {
+        head: tableHead,
+        body: tableBody,
+        startY: 49,
+        theme: 'grid',
+        styles: {
+          font: 'Amiri',
+          fontStyle: 'normal',
+          fontSize: 8,
+          textColor: [0, 0, 0],
+          lineColor: [0, 0, 0],
+          lineWidth: 0.2,
+          cellPadding: 2.5,
+          valign: 'middle',
+          halign: 'center',
+        },
+        headStyles: {
+          font: 'Amiri',
+          fontStyle: 'normal',
+          fontSize: 8,
+          textColor: [0, 0, 0],
+          fillColor: [242, 242, 242],
+          lineColor: [0, 0, 0],
+          lineWidth: 0.2,
+          halign: 'center',
+          valign: 'middle',
+        },
+        columnStyles: {
+          0: {
+            cellWidth: 15,
+            halign: 'center',
+          },
+          1: {
+            cellWidth: 45,
+            halign: 'center',
+          },
+          2: {
+            cellWidth: 100,
+            halign: 'left',
+          },
+          3: {
+            cellWidth: 45,
+            halign: 'center',
+            fontStyle: 'bold',
+          },
+          4: {
+            cellWidth: 35,
+            halign: 'center',
+          },
+        },
+        margin: {
+          left: 10,
+          right: 10,
+          top: 49,
+          bottom: 15,
+        },
+        didParseCell: (hookData) => {
+          if (hookData.column.index === 3) {
+            hookData.cell.styles.fontStyle =
+              'bold';
+          }
+
+          hookData.cell.styles.font =
+            'Amiri';
+        },
+        didDrawPage: () => {
+          const pageHeight =
+            doc.internal.pageSize.getHeight();
+
+          const pageNumber =
+            doc.getNumberOfPages();
+
+          doc.setFont('Amiri', 'normal');
+          doc.setFontSize(7);
+          doc.setTextColor(90, 90, 90);
+
+          doc.text(
+            `Page ${pageNumber}`,
+            pageWidth - 10,
+            pageHeight - 7,
+            { align: 'right' }
+          );
+        },
+      });
+
+      const safeClassName =
+        className
+          .replace(
+            /[^a-z0-9]+/gi,
+            '-'
+          )
+          .replace(
+            /^-+|-+$/g,
+            ''
+          ) ||
+        'Class';
+
+      const safeTerm =
+        term.replace(
+          /\s+/g,
+          '-'
+        );
+
+      doc.save(
+        `Diagnostic-Test-${safeClassName}-${safeTerm}.pdf`
+      );
+    } catch (error) {
+      console.error(
+        'Diagnostic PDF generation error:',
+        error
+      );
+
+      alert(
+        'Could not generate the diagnostic PDF file. Please check the browser console.'
+      );
+    }
+  };
+
+  const exportAssessmentPDF = async (
+    choice: AssessmentExportChoice
+  ) => {
     if (!classId) {
       alert('Please select a class.');
       return;
@@ -831,23 +1331,11 @@ export function AssessmentsPage() {
     }
 
     try {
-      /*
-       * ===============================================
-       * CREATE PDF
-       * ===============================================
-       */
-
       const doc = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
         format: 'a4',
       });
-
-      /*
-       * ===============================================
-       * LOAD AMIRI FONT
-       * ===============================================
-       */
 
       try {
         const fontResponse = await fetch(
@@ -867,7 +1355,6 @@ export function AssessmentsPage() {
           new Uint8Array(fontBuffer);
 
         let binary = '';
-
         const chunkSize = 0x8000;
 
         for (
@@ -886,11 +1373,9 @@ export function AssessmentsPage() {
           );
         }
 
-        const base64 = btoa(binary);
-
         doc.addFileToVFS(
           'Amiri-Regular.ttf',
-          base64
+          btoa(binary)
         );
 
         doc.addFont(
@@ -916,12 +1401,6 @@ export function AssessmentsPage() {
         return;
       }
 
-      /*
-       * ===============================================
-       * INFORMATION
-       * ===============================================
-       */
-
       const schoolName =
         data.schoolName?.trim() ||
         'School Name';
@@ -933,10 +1412,27 @@ export function AssessmentsPage() {
       const pageWidth =
         doc.internal.pageSize.getWidth();
 
+      const safeClassName =
+        className
+          .replace(
+            /[^a-z0-9]+/gi,
+            '-'
+          )
+          .replace(
+            /^-+|-+$/g,
+            ''
+          ) || 'Class';
+
+      const safeTerm =
+        term.replace(
+          /\s+/g,
+          '-'
+        );
+
       /*
-       * ===============================================
+       * =================================================
        * HEADER
-       * ===============================================
+       * =================================================
        */
 
       doc.setFont(
@@ -946,18 +1442,17 @@ export function AssessmentsPage() {
 
       doc.setFontSize(15);
 
+      const title =
+        choice === 'all'
+          ? 'CONTINUOUS ASSESSMENT RECORD'
+          : `${choice.toUpperCase()} RECORD`;
+
       doc.text(
-        'CONTINUOUS ASSESSMENT RECORD',
+        title,
         pageWidth / 2,
         14,
-        {
-          align: 'center',
-        }
+        { align: 'center' }
       );
-
-      /*
-       * LEFT INFORMATION
-       */
 
       doc.setFontSize(9);
 
@@ -979,46 +1474,31 @@ export function AssessmentsPage() {
         39
       );
 
-      /*
-       * RIGHT INFORMATION
-       */
-
       doc.text(
         `Academic Year: ${academicYear}`,
         pageWidth - 12,
         25,
-        {
-          align: 'right',
-        }
+        { align: 'right' }
       );
 
       doc.text(
         `Term: ${term}`,
         pageWidth - 12,
         32,
-        {
-          align: 'right',
-        }
+        { align: 'right' }
       );
+
+      const assessmentLabel =
+        choice === 'all'
+          ? 'All Assessments'
+          : choice;
 
       doc.text(
-        `Assessment: ${
-          isIntegrated
-            ? 'Integrated Activities'
-            : 'All Assessments'
-        }`,
+        `Assessment: ${assessmentLabel}`,
         pageWidth - 12,
         39,
-        {
-          align: 'right',
-        }
+        { align: 'right' }
       );
-
-      /*
-       * ===============================================
-       * SEPARATOR
-       * ===============================================
-       */
 
       doc.setDrawColor(
         180,
@@ -1036,30 +1516,365 @@ export function AssessmentsPage() {
       );
 
       /*
-       * ===============================================
-       * TABLE HEAD
-       * ===============================================
+       * =================================================
+       * INTEGRATED ACTIVITIES ONLY
+       * =================================================
        */
 
-      const tableHead = [
-        [
+      if (
+        choice ===
+        'Integrated Activities'
+      ) {
+        const tableHead = [[
           'N°',
           'Massar Code',
           'Student Name',
-          'Quiz 1',
-          'Quiz 2',
-          'Quiz Total /20',
-          'Global Test /20',
-          'Integrated Activities /20',
-          'Remarks',
-        ],
-      ];
+          'Discipline /5',
+          'Participation /5',
+          'Copybook /5',
+          'Projects /5',
+          'Total /20',
+        ]];
+
+        const tableBody =
+          classStudents.map(
+            (student, index) => {
+              const integrated =
+                getIntegratedRecord(
+                  student.id
+                );
+
+              return [
+                String(index + 1),
+                student.massarCode ?? '',
+                student.name,
+                integrated
+                  ? formatScoreOutOf(
+                      integrated.discipline,
+                      5
+                    )
+                  : '',
+                integrated
+                  ? formatScoreOutOf(
+                      integrated.participation,
+                      5
+                    )
+                  : '',
+                integrated
+                  ? formatScoreOutOf(
+                      integrated.copybook,
+                      5
+                    )
+                  : '',
+                integrated
+                  ? formatScoreOutOf(
+                      integrated.projects,
+                      5
+                    )
+                  : '',
+                integrated
+                  ? formatScoreOutOf(
+                      integrated.total,
+                      20
+                    )
+                  : '',
+              ];
+            }
+          );
+
+        autoTable(doc, {
+          head: tableHead,
+          body: tableBody,
+          startY: 49,
+          theme: 'grid',
+          styles: {
+            font: 'Amiri',
+            fontStyle: 'normal',
+            fontSize: 7,
+            textColor: [0, 0, 0],
+            lineColor: [0, 0, 0],
+            lineWidth: 0.2,
+            cellPadding: 2,
+            valign: 'middle',
+            halign: 'center',
+          },
+          headStyles: {
+            font: 'Amiri',
+            fontStyle: 'normal',
+            fontSize: 7,
+            textColor: [0, 0, 0],
+            fillColor: [242, 242, 242],
+            lineColor: [0, 0, 0],
+            lineWidth: 0.2,
+            halign: 'center',
+            valign: 'middle',
+          },
+          columnStyles: {
+            0: {
+              cellWidth: 12,
+              halign: 'center',
+            },
+            1: {
+              cellWidth: 35,
+              halign: 'center',
+            },
+            2: {
+              cellWidth: 70,
+              halign: 'left',
+            },
+            3: {
+              cellWidth: 25,
+              halign: 'center',
+            },
+            4: {
+              cellWidth: 30,
+              halign: 'center',
+            },
+            5: {
+              cellWidth: 25,
+              halign: 'center',
+            },
+            6: {
+              cellWidth: 25,
+              halign: 'center',
+            },
+            7: {
+              cellWidth: 28,
+              halign: 'center',
+              fontStyle: 'bold',
+            },
+          },
+          margin: {
+            left: 10,
+            right: 10,
+            top: 49,
+            bottom: 15,
+          },
+          didParseCell: (hookData) => {
+            if (
+              hookData.column.index === 7
+            ) {
+              hookData.cell.styles.fontStyle =
+                'bold';
+            }
+
+            hookData.cell.styles.font =
+              'Amiri';
+          },
+          didDrawPage: () => {
+            const pageHeight =
+              doc.internal.pageSize.getHeight();
+
+            const pageNumber =
+              doc.getNumberOfPages();
+
+            doc.setFont(
+              'Amiri',
+              'normal'
+            );
+
+            doc.setFontSize(7);
+
+            doc.setTextColor(
+              90,
+              90,
+              90
+            );
+
+            doc.text(
+              `Page ${pageNumber}`,
+              pageWidth - 10,
+              pageHeight - 7,
+              { align: 'right' }
+            );
+          },
+        });
+
+        doc.save(
+          `Integrated-Activities-${safeClassName}-${safeTerm}.pdf`
+        );
+
+        return;
+      }
 
       /*
-       * ===============================================
-       * TABLE BODY
-       * ===============================================
+       * =================================================
+       * INDIVIDUAL OFFICIAL ASSESSMENT
+       * =================================================
        */
+
+      if (
+        choice !== 'all'
+      ) {
+        const max =
+          choice === 'Quiz 1' ||
+          choice === 'Quiz 2'
+            ? 10
+            : 20;
+
+        const tableHead = [[
+          'N°',
+          'Massar Code',
+          'Student Name',
+          `${choice} /${max}`,
+          'Percentage',
+        ]];
+
+        const tableBody =
+          classStudents.map(
+            (student, index) => {
+              const score =
+                getAssessmentScore(
+                  student.id,
+                  choice as OfficialAssessment
+                );
+
+              const percentage =
+                score !== null
+                  ? `${(
+                      (score / max) *
+                      100
+                    ).toFixed(1)}%`
+                  : '';
+
+              return [
+                String(index + 1),
+                student.massarCode ?? '',
+                student.name,
+                score !== null
+                  ? formatScoreOutOf(
+                      score,
+                      max
+                    )
+                  : '',
+                percentage,
+              ];
+            }
+          );
+
+        autoTable(doc, {
+          head: tableHead,
+          body: tableBody,
+          startY: 49,
+          theme: 'grid',
+          styles: {
+            font: 'Amiri',
+            fontStyle: 'normal',
+            fontSize: 8,
+            textColor: [0, 0, 0],
+            lineColor: [0, 0, 0],
+            lineWidth: 0.2,
+            cellPadding: 2.5,
+            valign: 'middle',
+            halign: 'center',
+          },
+          headStyles: {
+            font: 'Amiri',
+            fontStyle: 'normal',
+            fontSize: 8,
+            textColor: [0, 0, 0],
+            fillColor: [242, 242, 242],
+            lineColor: [0, 0, 0],
+            lineWidth: 0.2,
+            halign: 'center',
+            valign: 'middle',
+          },
+          columnStyles: {
+            0: {
+              cellWidth: 15,
+              halign: 'center',
+            },
+            1: {
+              cellWidth: 45,
+              halign: 'center',
+            },
+            2: {
+              cellWidth: 100,
+              halign: 'left',
+            },
+            3: {
+              cellWidth: 45,
+              halign: 'center',
+              fontStyle: 'bold',
+            },
+            4: {
+              cellWidth: 35,
+              halign: 'center',
+            },
+          },
+          margin: {
+            left: 10,
+            right: 10,
+            top: 49,
+            bottom: 15,
+          },
+          didParseCell: (hookData) => {
+            if (
+              hookData.column.index === 3
+            ) {
+              hookData.cell.styles.fontStyle =
+                'bold';
+            }
+
+            hookData.cell.styles.font =
+              'Amiri';
+          },
+          didDrawPage: () => {
+            const pageHeight =
+              doc.internal.pageSize.getHeight();
+
+            const pageNumber =
+              doc.getNumberOfPages();
+
+            doc.setFont(
+              'Amiri',
+              'normal'
+            );
+
+            doc.setFontSize(7);
+
+            doc.setTextColor(
+              90,
+              90,
+              90
+            );
+
+            doc.text(
+              `Page ${pageNumber}`,
+              pageWidth - 10,
+              pageHeight - 7,
+              { align: 'right' }
+            );
+          },
+        });
+
+        doc.save(
+          `${choice.replace(
+            /\s+/g,
+            '-'
+          )}-${safeClassName}-${safeTerm}.pdf`
+        );
+
+        return;
+      }
+
+      /*
+       * =================================================
+       * ALL ASSESSMENTS
+       * =================================================
+       */
+
+      const tableHead = [[
+        'N°',
+        'Massar Code',
+        'Student Name',
+        'Quiz 1',
+        'Quiz 2',
+        'Quiz Total /20',
+        'Global Test /20',
+        'Integrated Activities /20',
+        'Remarks',
+      ]];
 
       const tableBody =
         classStudents.map(
@@ -1087,37 +1902,33 @@ export function AssessmentsPage() {
                 student.id
               );
 
-            /*
-             * Quiz 1 + Quiz 2 = /20
-             */
-
             const quizTotal =
               quiz1 !== null &&
               quiz2 !== null
                 ? quiz1 + quiz2
                 : null;
 
-            /*
-             * Components used only
-             * for Remarks.
-             */
-
             const components: number[] = [];
 
-            if (quizTotal !== null) {
+            if (
+              quizTotal !== null
+            ) {
               components.push(
                 quizTotal
               );
             }
 
-            if (globalTest !== null) {
+            if (
+              globalTest !== null
+            ) {
               components.push(
                 globalTest
               );
             }
 
             const integratedTotal =
-              integrated?.total ?? null;
+              integrated?.total ??
+              null;
 
             if (
               integratedTotal !== null
@@ -1142,66 +1953,48 @@ export function AssessmentsPage() {
 
             return [
               String(index + 1),
-
               student.massarCode ?? '',
-
               student.name,
-
               quiz1 !== null
                 ? formatScoreOutOf(
                     quiz1,
                     10
                   )
                 : '',
-
               quiz2 !== null
                 ? formatScoreOutOf(
                     quiz2,
                     10
                   )
                 : '',
-
               quizTotal !== null
                 ? formatScoreOutOf(
                     quizTotal,
                     20
                   )
                 : '',
-
               globalTest !== null
                 ? formatScoreOutOf(
                     globalTest,
                     20
                   )
                 : '',
-
               integratedTotal !== null
                 ? formatScoreOutOf(
                     integratedTotal,
                     20
                   )
                 : '',
-
               getRemarks(grade),
             ];
           }
         );
 
-      /*
-       * ===============================================
-       * PDF TABLE
-       * ===============================================
-       */
-
       autoTable(doc, {
         head: tableHead,
-
         body: tableBody,
-
         startY: 49,
-
         theme: 'grid',
-
         styles: {
           font: 'Amiri',
           fontStyle: 'normal',
@@ -1213,7 +2006,6 @@ export function AssessmentsPage() {
           valign: 'middle',
           halign: 'center',
         },
-
         headStyles: {
           font: 'Amiri',
           fontStyle: 'normal',
@@ -1225,74 +2017,55 @@ export function AssessmentsPage() {
           halign: 'center',
           valign: 'middle',
         },
-
         columnStyles: {
           0: {
             cellWidth: 9,
             halign: 'center',
           },
-
           1: {
             cellWidth: 27,
             halign: 'center',
           },
-
           2: {
             cellWidth: 55,
             halign: 'left',
           },
-
           3: {
             cellWidth: 20,
             halign: 'center',
           },
-
           4: {
             cellWidth: 20,
             halign: 'center',
           },
-
           5: {
             cellWidth: 27,
             halign: 'center',
             fontStyle: 'bold',
           },
-
           6: {
             cellWidth: 27,
             halign: 'center',
             fontStyle: 'bold',
           },
-
           7: {
             cellWidth: 36,
             halign: 'center',
             fontStyle: 'bold',
           },
-
           8: {
             cellWidth: 32,
             halign: 'center',
             fontStyle: 'bold',
           },
         },
-
         margin: {
           left: 10,
           right: 10,
           top: 49,
           bottom: 15,
         },
-
         didParseCell: (hookData) => {
-          /*
-           * Bold:
-           * Quiz Total
-           * Global Test
-           * Integrated Activities
-           * Remarks
-           */
-
           if (
             hookData.column.index === 5 ||
             hookData.column.index === 6 ||
@@ -1303,14 +2076,9 @@ export function AssessmentsPage() {
               'bold';
           }
 
-          /*
-           * Keep Amiri for all cells.
-           */
-
           hookData.cell.styles.font =
             'Amiri';
         },
-
         didDrawPage: () => {
           const pageHeight =
             doc.internal.pageSize.getHeight();
@@ -1331,47 +2099,14 @@ export function AssessmentsPage() {
             90
           );
 
-         
           doc.text(
             `Page ${pageNumber}`,
             pageWidth - 10,
             pageHeight - 7,
-            {
-              align: 'right',
-            }
+            { align: 'right' }
           );
         },
       });
-
-      /*
-       * ===============================================
-       * FILE NAME
-       * ===============================================
-       */
-
-      const safeClassName =
-        className
-          .replace(
-            /[^a-z0-9]+/gi,
-            '-'
-          )
-          .replace(
-            /^-+|-+$/g,
-            ''
-          ) ||
-        'Class';
-
-      const safeTerm =
-        term.replace(
-          /\s+/g,
-          '-'
-        );
-
-      /*
-       * ===============================================
-       * SAVE PDF
-       * ===============================================
-       */
 
       doc.save(
         `Continuous-Assessment-${safeClassName}-${safeTerm}.pdf`
@@ -1405,8 +2140,7 @@ export function AssessmentsPage() {
         </h1>
 
         <p className="mt-1 text-sm text-slate-500">
-          Manage quizzes, global tests and
-          integrated activities by term.
+          Manage quizzes, global tests, integrated activities and diagnostic tests by term.
         </p>
       </div>
 
@@ -1541,6 +2275,10 @@ export function AssessmentsPage() {
               <option value="Integrated Activities">
                 Integrated Activities
               </option>
+
+              <option value="Diagnostic Test">
+                Diagnostic Test
+              </option>
             </select>
           </label>
 
@@ -1607,18 +2345,67 @@ export function AssessmentsPage() {
 
                 {isIntegrated
                   ? 'Save Activities'
-                  : 'Save Assessment'}
+                  : isDiagnostic
+                    ? 'Save Diagnostic'
+                    : 'Save Assessment'}
               </button>
 
-              <button
-                type="button"
-                onClick={exportPDF}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <Download size={16} />
+              {isDiagnostic ? (
+                <button
+                  type="button"
+                  onClick={
+                    exportDiagnosticPDF
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <Download size={16} />
 
-                Export PDF
-              </button>
+                  Export Diagnostic PDF
+                </button>
+              ) : (
+                <>
+                  <select
+                    value={exportChoice}
+                    onChange={(event) =>
+                      setExportChoice(
+                        event.target
+                          .value as AssessmentExportChoice
+                      )
+                    }
+                    className="form-select w-auto min-w-[190px]"
+                  >
+                    <option value="all">
+                      All Assessments
+                    </option>
+                    <option value="Quiz 1">
+                      Quiz 1
+                    </option>
+                    <option value="Quiz 2">
+                      Quiz 2
+                    </option>
+                    <option value="Global Test">
+                      Global Test
+                    </option>
+                    <option value="Integrated Activities">
+                      Integrated Activities
+                    </option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      exportAssessmentPDF(
+                        exportChoice
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Download size={16} />
+
+                    Export PDF
+                  </button>
+                </>
+              )}
 
               {saved && (
                 <span className="text-sm font-medium text-emerald-600">
@@ -1796,7 +2583,7 @@ export function AssessmentsPage() {
             ) : (
 
               /* =================================================
-                 NORMAL ASSESSMENT
+                 NORMAL ASSESSMENT / DIAGNOSTIC TEST
                  ================================================= */
 
               <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -1816,7 +2603,9 @@ export function AssessmentsPage() {
                       </th>
 
                       <th className="px-4 py-3">
-                        Score /{maxScore}
+                        {isDiagnostic
+                          ? 'Diagnostic Score /20'
+                          : `Score /${maxScore}`}
                       </th>
 
                       <th className="px-4 py-3">
@@ -1982,8 +2771,7 @@ export function AssessmentsPage() {
 
       {!classId && (
         <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          Select a class to enter
-          assessment grades.
+          Select a class to enter grades.
         </p>
       )}
 
