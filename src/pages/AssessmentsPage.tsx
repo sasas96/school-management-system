@@ -91,6 +91,10 @@ const EMPTY_INTEGRATED_VALUES = {
   projects: '',
 };
 
+// PDF identity used by the teacher's current school record.
+const PDF_SCHOOL_NAME = 'Collège Saleh El-Ouardani';
+const PDF_TEACHER_NAME = 'Ossama Lachgar';
+
 /*
  * =====================================================
  * HELPERS
@@ -158,6 +162,7 @@ export function AssessmentsPage() {
 
   type AssessmentExportChoice =
     | 'all'
+    | 'official'
     | 'Quiz 1'
     | 'Quiz 2'
     | 'Global Test'
@@ -1044,15 +1049,16 @@ export function AssessmentsPage() {
           i < uint8Array.length;
           i += chunkSize
         ) {
-          binary += String.fromCharCode(
-            ...uint8Array.subarray(
-              i,
-              Math.min(
-                i + chunkSize,
-                uint8Array.length
-              )
-            )
+          const end = Math.min(
+            i + chunkSize,
+            uint8Array.length
           );
+
+          for (let j = i; j < end; j += 1) {
+            binary += String.fromCharCode(
+              uint8Array[j]
+            );
+          }
         }
 
         doc.addFileToVFS(
@@ -1079,13 +1085,9 @@ export function AssessmentsPage() {
         return;
       }
 
-      const schoolName =
-        data.schoolName?.trim() ||
-        'School Name';
+      const schoolName = PDF_SCHOOL_NAME;
 
-      const teacherName =
-        data.teacherName?.trim() ||
-        'Teacher Name';
+      const teacherName = PDF_TEACHER_NAME;
 
       const pageWidth =
         doc.internal.pageSize.getWidth();
@@ -1233,7 +1235,7 @@ export function AssessmentsPage() {
           3: {
             cellWidth: 45,
             halign: 'center',
-            fontStyle: 'bold',
+            fontStyle: 'normal',
           },
           4: {
             cellWidth: 35,
@@ -1317,26 +1319,30 @@ export function AssessmentsPage() {
     }
 
     if (!academicYear) {
-      alert(
-        'This class has no academic year.'
-      );
+      alert('This class has no academic year.');
       return;
     }
 
     if (classStudents.length === 0) {
-      alert(
-        'This class has no students.'
-      );
+      alert('This class has no students.');
       return;
     }
 
     try {
       const doc = new jsPDF({
-        orientation: 'landscape',
+        // Personal sheet stays portrait; official school sheet uses
+        // landscape so all 12 official columns fit on one page.
+        orientation:
+          choice === 'official'
+            ? 'landscape'
+            : 'portrait',
         unit: 'mm',
         format: 'a4',
       });
 
+      // Load a Unicode font so Arabic student names are preserved.
+      // The byte conversion deliberately avoids the spread operator because
+      // spreading a large Uint8Array can trigger STATUS_STACK_OVERFLOW.
       try {
         const fontResponse = await fetch(
           '/fonts/Amiri-Regular.ttf'
@@ -1350,7 +1356,6 @@ export function AssessmentsPage() {
 
         const fontBuffer =
           await fontResponse.arrayBuffer();
-
         const uint8Array =
           new Uint8Array(fontBuffer);
 
@@ -1362,173 +1367,652 @@ export function AssessmentsPage() {
           i < uint8Array.length;
           i += chunkSize
         ) {
-          binary += String.fromCharCode(
-            ...uint8Array.subarray(
-              i,
-              Math.min(
-                i + chunkSize,
-                uint8Array.length
-              )
-            )
+          const end = Math.min(
+            i + chunkSize,
+            uint8Array.length
           );
+
+          for (let j = i; j < end; j += 1) {
+            binary += String.fromCharCode(
+              uint8Array[j]
+            );
+          }
         }
 
         doc.addFileToVFS(
           'Amiri-Regular.ttf',
           btoa(binary)
         );
-
         doc.addFont(
           'Amiri-Regular.ttf',
           'Amiri',
           'normal'
         );
-
-        doc.setFont(
-          'Amiri',
-          'normal'
-        );
+        doc.setFont('Amiri', 'normal');
       } catch (fontError) {
         console.error(
-          'Amiri font loading error:',
+          'Assessment PDF font loading error:',
           fontError
         );
 
         alert(
           'Arabic font could not be loaded. Please make sure Amiri-Regular.ttf exists in public/fonts/.'
         );
-
         return;
       }
 
-      const schoolName =
-        data.schoolName?.trim() ||
-        'School Name';
+      /*
+       * =================================================
+       * DESIGN SYSTEM
+       * =================================================
+       */
+      const NAVY: [number, number, number] = [15, 42, 78];
+      const NAVY_DARK: [number, number, number] = [9, 30, 57];
+      const GOLD: [number, number, number] = [190, 145, 70];
+      const GOLD_LIGHT: [number, number, number] = [232, 214, 175];
+      const CREAM: [number, number, number] = [250, 247, 239];
+      const RED: [number, number, number] = [170, 30, 40];
+      const GREEN: [number, number, number] = [0, 110, 70];
+      const SKY: [number, number, number] = [221, 232, 242];
 
-      const teacherName =
-        data.teacherName?.trim() ||
-        'Teacher Name';
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 7;
 
-      const pageWidth =
-        doc.internal.pageSize.getWidth();
+      const schoolName = PDF_SCHOOL_NAME;
+      const teacherName = PDF_TEACHER_NAME;
 
       const safeClassName =
         className
-          .replace(
-            /[^a-z0-9]+/gi,
-            '-'
-          )
-          .replace(
-            /^-+|-+$/g,
-            ''
-          ) || 'Class';
+          .replace(/[^a-z0-9]+/gi, '-')
+          .replace(/^-+|-+$/g, '') || 'Class';
 
-      const safeTerm =
-        term.replace(
-          /\s+/g,
-          '-'
+      const safeTerm = term.replace(/\s+/g, '-');
+
+      const drawMoroccoFlag = (x: number, y: number, w: number, h: number) => {
+        doc.setFillColor(...RED);
+        doc.rect(x, y, w, h, 'F');
+
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+        const r1 = Math.min(w, h) * 0.28;
+        const r2 = r1 * 0.38;
+        const points: Array<[number, number]> = [];
+
+        for (let i = 0; i < 10; i += 1) {
+          const angle = -Math.PI / 2 + (i * Math.PI) / 5;
+          const r = i % 2 === 0 ? r1 : r2;
+          points.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
+        }
+
+        doc.setDrawColor(...GREEN);
+        doc.setLineWidth(0.6);
+        for (let i = 0; i < points.length; i += 1) {
+          const [x1, y1] = points[i];
+          const [x2, y2] = points[(i + 1) % points.length];
+          doc.line(x1, y1, x2, y2);
+        }
+      };
+
+      const drawUKFlag = (x: number, y: number, w: number, h: number) => {
+        doc.setFillColor(20, 45, 90);
+        doc.rect(x, y, w, h, 'F');
+
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(Math.max(1.8, h * 0.22));
+        doc.line(x, y, x + w, y + h);
+        doc.line(x + w, y, x, y + h);
+
+        doc.setDrawColor(...RED);
+        doc.setLineWidth(Math.max(0.8, h * 0.09));
+        doc.line(x, y, x + w, y + h);
+        doc.line(x + w, y, x, y + h);
+
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(Math.max(2.5, h * 0.30));
+        doc.line(x + w / 2, y, x + w / 2, y + h);
+        doc.line(x, y + h / 2, x + w, y + h / 2);
+
+        doc.setDrawColor(...RED);
+        doc.setLineWidth(Math.max(1.2, h * 0.13));
+        doc.line(x + w / 2, y, x + w / 2, y + h);
+        doc.line(x, y + h / 2, x + w, y + h / 2);
+      };
+
+      const drawMoroccanTower = (x: number, baseY: number, scale: number) => {
+        doc.setFillColor(...GOLD_LIGHT);
+        doc.rect(x, baseY - 25 * scale, 9 * scale, 25 * scale, 'F');
+        doc.setFillColor(...GOLD);
+        doc.rect(x - 1 * scale, baseY - 27 * scale, 11 * scale, 2 * scale, 'F');
+        doc.setFillColor(...GREEN);
+        doc.rect(x + 2.2 * scale, baseY - 22 * scale, 4.6 * scale, 4.5 * scale, 'F');
+        doc.setFillColor(...GOLD);
+        doc.rect(x + 3 * scale, baseY - 12 * scale, 3 * scale, 7 * scale, 'F');
+        doc.setFillColor(...GREEN);
+        doc.rect(x - 2 * scale, baseY - 30 * scale, 13 * scale, 3 * scale, 'F');
+        doc.setFillColor(...GOLD);
+        doc.triangle(
+          x + 4.5 * scale,
+          baseY - 35 * scale,
+          x - 1 * scale,
+          baseY - 30 * scale,
+          x + 10 * scale,
+          baseY - 30 * scale,
+          'F'
         );
+      };
+
+      const drawBigBen = (x: number, baseY: number, scale: number) => {
+        doc.setFillColor(...SKY);
+        doc.rect(x, baseY - 27 * scale, 8 * scale, 27 * scale, 'F');
+        doc.setFillColor(...NAVY);
+        doc.rect(x - 1 * scale, baseY - 29 * scale, 10 * scale, 2 * scale, 'F');
+        doc.triangle(
+          x - 1 * scale,
+          baseY - 29 * scale,
+          x + 4 * scale,
+          baseY - 36 * scale,
+          x + 9 * scale,
+          baseY - 29 * scale,
+          'F'
+        );
+        doc.setDrawColor(...GOLD);
+        doc.setLineWidth(0.5 * scale);
+        doc.circle(x + 4 * scale, baseY - 20 * scale, 2.2 * scale, 'S');
+        doc.line(x + 4 * scale, baseY - 20 * scale, x + 4 * scale, baseY - 21.5 * scale);
+        doc.line(x + 4 * scale, baseY - 20 * scale, x + 5.3 * scale, baseY - 20 * scale);
+        doc.setFillColor(...NAVY);
+        doc.rect(x + 2.5 * scale, baseY - 10 * scale, 3 * scale, 10 * scale, 'F');
+      };
+
+      const drawHeader = () => {
+        doc.setFillColor(...CREAM);
+        doc.rect(0, 0, pageWidth, 52, 'F');
+
+        doc.setFillColor(...NAVY);
+        doc.rect(0, 0, pageWidth, 3, 'F');
+
+        drawMoroccoFlag(8, 7, 22, 14);
+        drawUKFlag(pageWidth - 30, 7, 22, 14);
+
+        drawMoroccanTower(14, 43, 0.8);
+        drawBigBen(pageWidth - 22, 43, 0.8);
+
+        doc.setDrawColor(...GOLD);
+        doc.setLineWidth(0.5);
+        doc.line(37, 13, 72, 13);
+        doc.line(pageWidth - 72, 13, pageWidth - 37, 13);
+
+        doc.setFillColor(...GOLD);
+        doc.circle(75, 13, 1, 'F');
+        doc.circle(pageWidth - 75, 13, 1, 'F');
+
+        // Academic cap icon.
+        doc.setFillColor(...GOLD);
+        doc.triangle(
+          pageWidth / 2 - 7,
+          8,
+          pageWidth / 2,
+          4,
+          pageWidth / 2 + 7,
+          8,
+          'F'
+        );
+        doc.rect(pageWidth / 2 - 5, 8, 10, 2.2, 'F');
+        doc.setLineWidth(0.7);
+        doc.line(pageWidth / 2 + 5, 8, pageWidth / 2 + 7, 14);
+        doc.circle(pageWidth / 2 + 7, 14, 0.8, 'F');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(17);
+        doc.setTextColor(...NAVY);
+        doc.text('SEMESTRIAL GRADING SHEET', pageWidth / 2, 25, {
+          align: 'center',
+        });
+
+        doc.setDrawColor(...GOLD);
+        doc.setLineWidth(0.45);
+        doc.line(45, 29, pageWidth - 45, 29);
+        doc.circle(pageWidth / 2, 29, 1.4, 'S');
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(...NAVY_DARK);
+        doc.text(schoolName, pageWidth / 2, 34, { align: 'center' });
+        doc.text(`Teacher: ${teacherName}`, pageWidth / 2, 38.5, { align: 'center' });
+
+        // Information boxes.
+        const boxY = 41.5;
+        const boxH = 7.5;
+        const boxW = 57;
+
+        doc.setDrawColor(...GOLD);
+        doc.setLineWidth(0.45);
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(20, boxY, boxW, boxH, 1.5, 1.5, 'FD');
+        doc.roundedRect(pageWidth - 20 - boxW, boxY, boxW, boxH, 1.5, 1.5, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(...NAVY);
+        doc.text(`Semester : ${term}`, 23, boxY + 5, { align: 'left' });
+        doc.text(`Class : ${className}`, pageWidth - 23, boxY + 5, { align: 'right' });
+      };
+
+      const drawFooter = (pageNumber: number) => {
+        const y = pageHeight - 13;
+
+        doc.setFillColor(...NAVY_DARK);
+        doc.rect(0, pageHeight - 10, pageWidth, 10, 'F');
+
+        // Moroccan-inspired ribbon.
+        doc.setDrawColor(...RED);
+        doc.setLineWidth(2.2);
+        doc.line(0, y + 1, pageWidth, y + 1);
+        doc.setDrawColor(...GOLD);
+        doc.setLineWidth(1.2);
+        doc.line(0, y + 3.2, pageWidth, y + 3.2);
+        doc.setDrawColor(...GREEN);
+        doc.setLineWidth(1.2);
+        doc.line(0, y + 5.2, pageWidth, y + 5.2);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(255, 255, 255);
+        doc.text(`Page ${pageNumber}`, pageWidth - 8, pageHeight - 3.3, {
+          align: 'right',
+        });
+      };
+
+      const applyBaseFont = () => {
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+      };
 
       /*
        * =================================================
        * HEADER
        * =================================================
        */
+      drawHeader();
 
-      doc.setFont(
-        'Amiri',
-        'normal'
-      );
+      /*
+       * =================================================
+       * OFFICIAL SCHOOL SHEET
+       * =================================================
+       */
+      if (choice === 'official') {
+        const OFFICIAL_ROW_COUNT = Math.max(39, classStudents.length);
 
-      doc.setFontSize(15);
+        const officialHead = [
+          [
+            { content: 'N°', rowSpan: 2 },
+            { content: "Students' names", rowSpan: 2 },
+            { content: 'Diagnostic Test', rowSpan: 2 },
+            { content: 'INTEGRATED ACTIVITIES', colSpan: 5 },
+            { content: 'Quizzes & Global Test', colSpan: 4 },
+          ],
+          [
+            'Discipline\n/5',
+            'Participation\n/5',
+            'Copybook\n/5',
+            'Projects\n/5',
+            'Total\n/20',
+            'Q : 1',
+            'Q : 2',
+            'Total\n(Q1 + Q2)',
+            'G. Test',
+          ],
+        ];
 
-      const title =
-        choice === 'all'
-          ? 'CONTINUOUS ASSESSMENT RECORD'
-          : `${choice.toUpperCase()} RECORD`;
+        const officialBody = Array.from(
+          { length: OFFICIAL_ROW_COUNT },
+          (_, index) => {
+            const student = classStudents[index];
 
-      doc.text(
-        title,
-        pageWidth / 2,
-        14,
-        { align: 'center' }
-      );
+            if (!student) {
+              return [
+                String(index + 1),
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+              ];
+            }
 
-      doc.setFontSize(9);
+            const diagnostic = getDiagnosticScore(student.id);
+            const quiz1 = getAssessmentScore(student.id, 'Quiz 1');
+            const quiz2 = getAssessmentScore(student.id, 'Quiz 2');
+            const globalTest = getAssessmentScore(student.id, 'Global Test');
+            const integrated = getIntegratedRecord(student.id);
+            const integratedTotal = integrated
+              ? (Number(integrated.discipline) || 0) +
+                (Number(integrated.participation) || 0) +
+                (Number(integrated.copybook) || 0) +
+                (Number(integrated.projects) || 0)
+              : null;
 
-      doc.text(
-        `School: ${schoolName}`,
-        12,
-        25
-      );
+            const quizTotal =
+              quiz1 !== null && quiz2 !== null
+                ? quiz1 + quiz2
+                : null;
 
-      doc.text(
-        `Teacher: ${teacherName}`,
-        12,
-        32
-      );
+            return [
+              String(index + 1),
+              student.name,
+              diagnostic !== null ? formatScoreOutOf(diagnostic, 20) : '',
+              integrated ? formatScore(integrated.discipline) : '',
+              integrated ? formatScore(integrated.participation) : '',
+              integrated ? formatScore(integrated.copybook) : '',
+              integrated ? formatScore(integrated.projects) : '',
+              integratedTotal !== null ? formatScore(integratedTotal) : '',
+              quiz1 !== null ? formatScoreOutOf(quiz1, 10) : '',
+              quiz2 !== null ? formatScoreOutOf(quiz2, 10) : '',
+              quizTotal !== null ? formatScoreOutOf(quizTotal, 20) : '',
+              globalTest !== null ? formatScoreOutOf(globalTest, 20) : '',
+            ];
+          }
+        );
 
-      doc.text(
-        `Class: ${className}`,
-        12,
-        39
-      );
+        const leftX = 10;
+        const topY = 8;
 
-      doc.text(
-        `Academic Year: ${academicYear}`,
-        pageWidth - 12,
-        25,
-        { align: 'right' }
-      );
+        doc.setFillColor(255, 255, 255);
+        doc.rect(0, 0, pageWidth, pageHeight, 'F');
+        doc.setDrawColor(20, 20, 20);
+        doc.setLineWidth(0.5);
+        doc.rect(4, 4, pageWidth - 8, pageHeight - 8, 'S');
 
-      doc.text(
-        `Term: ${term}`,
-        pageWidth - 12,
-        32,
-        { align: 'right' }
-      );
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(20, 20, 20);
+        doc.text('Teacher:', leftX, topY + 5);
+        doc.text('H. School:', leftX, topY + 9);
+        doc.text('Total N° of students:', leftX, topY + 13);
+        doc.text('Academic year:', leftX, topY + 17);
 
-      const assessmentLabel =
-        choice === 'all'
-          ? 'All Assessments'
-          : choice;
+        doc.setFont('helvetica', 'normal');
+        doc.text(teacherName, leftX + 28, topY + 5);
+        doc.text(schoolName, leftX + 28, topY + 9);
+        doc.text(String(classStudents.length), leftX + 38, topY + 13);
+        doc.text(academicYear, leftX + 28, topY + 17);
 
-      doc.text(
-        `Assessment: ${assessmentLabel}`,
-        pageWidth - 12,
-        39,
-        { align: 'right' }
-      );
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text(`Class: ${className}`, pageWidth - 10, topY + 5, { align: 'right' });
+        doc.text(`SEMESTER : ${term.toUpperCase()}`, pageWidth - 10, topY + 13, { align: 'right' });
 
-      doc.setDrawColor(
-        180,
-        180,
-        180
-      );
+        // Simple official-style centre mark instead of an external logo asset.
+        doc.setDrawColor(70, 70, 70);
+        doc.setLineWidth(0.35);
+        doc.line(pageWidth / 2 - 22, 24, pageWidth / 2 + 22, 24);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('SEMESTRIAL GRADING SHEET', pageWidth / 2, 22, { align: 'center' });
 
-      doc.setLineWidth(0.3);
+        autoTable(doc, {
+          head: officialHead,
+          body: officialBody,
+          startY: 29,
+          margin: { left: 7, right: 7, bottom: 8 },
+          theme: 'grid',
+          tableWidth: pageWidth - 14,
+          styles: {
+            font: 'helvetica',
+            fontStyle: 'normal',
+            fontSize: 6.5,
+            textColor: [20, 20, 20],
+            lineColor: [45, 45, 45],
+            lineWidth: 0.2,
+            cellPadding: 0.7,
+            minCellHeight: 3.75,
+            valign: 'middle',
+            halign: 'center',
+          },
+          headStyles: {
+            font: 'helvetica',
+            fontStyle: 'bold',
+            fontSize: 6.2,
+            textColor: [20, 20, 20],
+            fillColor: [232, 229, 216],
+            lineColor: [45, 45, 45],
+            lineWidth: 0.25,
+            halign: 'center',
+            valign: 'middle',
+            cellPadding: 1,
+          },
+          columnStyles: {
+            0: { cellWidth: 8, halign: 'center' },
+            1: { cellWidth: 70, halign: 'left' },
+            2: { cellWidth: 21, halign: 'center' },
+            3: { cellWidth: 20, halign: 'center' },
+            4: { cellWidth: 20, halign: 'center' },
+            5: { cellWidth: 20, halign: 'center' },
+            6: { cellWidth: 20, halign: 'center' },
+            7: { cellWidth: 21, halign: 'center' },
+            8: { cellWidth: 16, halign: 'center' },
+            9: { cellWidth: 16, halign: 'center' },
+            10: { cellWidth: 24, halign: 'center' },
+            11: { cellWidth: 22, halign: 'center' },
+          },
+          didParseCell: (hookData) => {
+            if (hookData.section === 'body' && hookData.column.index === 1) {
+              hookData.cell.styles.font = 'Amiri';
+              hookData.cell.styles.fontStyle = 'normal';
+            }
 
-      doc.line(
-        12,
-        44,
-        pageWidth - 12,
-        44
-      );
+            if (hookData.section === 'head') {
+              if (hookData.row.index === 0) {
+                hookData.cell.styles.fillColor = [224, 221, 207];
+              }
+            }
+          },
+          didDrawPage: () => {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(6);
+            doc.setTextColor(80, 80, 80);
+            doc.text(`Page ${doc.getNumberOfPages()}`, pageWidth - 8, pageHeight - 4, { align: 'right' });
+          },
+        });
+
+        doc.save(`Official-Grading-Sheet-${safeClassName}-${safeTerm}.pdf`);
+        return;
+      }
+
+      /*
+       * =================================================
+       * ALL ASSESSMENTS
+       * =================================================
+       * This is the main Semestrial Grading Sheet design.
+       */
+      if (choice === 'all') {
+        const tableHead = [
+          [
+            { content: 'No.', rowSpan: 2 },
+            { content: "Student's Name", rowSpan: 2 },
+            { content: 'INTEGRATED ACTIVITIES', colSpan: 5 },
+            { content: 'CONTINUOUS ASSESSMENT', colSpan: 4 },
+            { content: 'REMARK', rowSpan: 2 },
+          ],
+          [
+            'Discipline\n/5',
+            'Participation\n/5',
+            'Copybook\n/5',
+            'Projects\n/5',
+            'Total\n/20',
+            'Quiz 1',
+            'Quiz 2',
+            'Full Mark\n(Q1 + Q2)',
+            'Global Test',
+          ],
+        ];
+
+        const tableBody = classStudents.map((student, index) => {
+          const quiz1 = getAssessmentScore(student.id, 'Quiz 1');
+          const quiz2 = getAssessmentScore(student.id, 'Quiz 2');
+          const globalTest = getAssessmentScore(student.id, 'Global Test');
+          const integrated = getIntegratedRecord(student.id);
+
+          const quizTotal =
+            quiz1 !== null && quiz2 !== null ? quiz1 + quiz2 : null;
+
+          const integratedTotal = integrated
+            ? (Number(integrated.discipline) || 0) +
+              (Number(integrated.participation) || 0) +
+              (Number(integrated.copybook) || 0) +
+              (Number(integrated.projects) || 0)
+            : null;
+
+          const components: number[] = [];
+          if (quizTotal !== null) components.push(quizTotal);
+          if (globalTest !== null) components.push(globalTest);
+          if (integratedTotal !== null) components.push(integratedTotal);
+
+          const overallGrade =
+            components.length > 0
+              ? components.reduce((sum, value) => sum + value, 0) / components.length
+              : null;
+
+          const remark =
+            overallGrade === null
+              ? ''
+              : overallGrade >= 16
+                ? 'Excellent'
+                : overallGrade >= 14
+                  ? 'Very Good'
+                  : overallGrade >= 12
+                    ? 'Good'
+                    : overallGrade >= 10
+                      ? 'Satisfactory'
+                      : 'Needs Improvement';
+
+          return [
+            String(index + 1),
+            student.name,
+            integrated ? formatScore(integrated.discipline) : '',
+            integrated ? formatScore(integrated.participation) : '',
+            integrated ? formatScore(integrated.copybook) : '',
+            integrated ? formatScore(integrated.projects) : '',
+            integratedTotal !== null ? formatScoreOutOf(integratedTotal, 20) : '',
+            quiz1 !== null ? formatScoreOutOf(quiz1, 10) : '',
+            quiz2 !== null ? formatScoreOutOf(quiz2, 10) : '',
+            quizTotal !== null ? formatScoreOutOf(quizTotal, 20) : '',
+            globalTest !== null ? formatScoreOutOf(globalTest, 20) : '',
+            remark,
+          ];
+        });
+
+        autoTable(doc, {
+          head: tableHead,
+          body: tableBody,
+          startY: 56,
+          margin: {
+            left: margin,
+            right: margin,
+            bottom: 13,
+          },
+          theme: 'grid',
+          tableWidth: pageWidth - margin * 2,
+          styles: {
+            font: 'helvetica',
+            fontStyle: 'normal',
+            fontSize: 6.7,
+            textColor: [25, 25, 25],
+            lineColor: GOLD_LIGHT,
+            lineWidth: 0.25,
+            cellPadding: 1.35,
+            minCellHeight: 5.4,
+            valign: 'middle',
+            halign: 'center',
+          },
+          headStyles: {
+            font: 'helvetica',
+            fontStyle: 'normal',
+            fontSize: 6.5,
+            textColor: [255, 255, 255],
+            fillColor: NAVY,
+            lineColor: [255, 255, 255],
+            lineWidth: 0.25,
+            halign: 'center',
+            valign: 'middle',
+            cellPadding: 1.5,
+          },
+          alternateRowStyles: {
+            fillColor: [255, 252, 245],
+          },
+          columnStyles: {
+            0: { cellWidth: 8, halign: 'center' },
+            1: { cellWidth: 53, halign: 'left' },
+            2: { cellWidth: 15, halign: 'center' },
+            3: { cellWidth: 17, halign: 'center' },
+            4: { cellWidth: 15, halign: 'center' },
+            5: { cellWidth: 15, halign: 'center' },
+            6: { cellWidth: 18, halign: 'center' },
+            7: { cellWidth: 13, halign: 'center' },
+            8: { cellWidth: 13, halign: 'center' },
+            9: { cellWidth: 20, halign: 'center', fontStyle: 'normal' },
+            10: { cellWidth: 16, halign: 'center', fontStyle: 'normal' },
+            11: { cellWidth: 28, halign: 'left', fontStyle: 'normal' },
+          },
+          didParseCell: (hookData) => {
+            hookData.cell.styles.font = 'helvetica';
+
+            if (hookData.section === 'body' && hookData.column.index === 1) {
+              hookData.cell.styles.font = 'Amiri';
+            }
+
+            if (hookData.section === 'head') {
+              if (hookData.row.index === 0 && hookData.column.index >= 2) {
+                hookData.cell.styles.fillColor = NAVY_DARK;
+              }
+
+              if (
+                hookData.row.index === 1 &&
+                hookData.column.index >= 2 &&
+                hookData.column.index <= 5
+              ) {
+                hookData.cell.styles.fillColor = [33, 67, 105];
+              }
+            }
+
+            if (hookData.section === 'body') {
+              if (hookData.column.index >= 7 && hookData.column.index <= 10) {
+                hookData.cell.styles.fontStyle = 'normal';
+                hookData.cell.styles.textColor = NAVY_DARK;
+              }
+
+              if (hookData.column.index === 11) {
+                hookData.cell.styles.fontStyle = 'normal';
+                hookData.cell.styles.textColor = NAVY_DARK;
+              }
+            }
+          },
+          didDrawPage: () => {
+            applyBaseFont();
+            drawFooter(doc.getNumberOfPages());
+          },
+        });
+
+        doc.save(`Semestrial-Grading-Sheet-${safeClassName}-${safeTerm}.pdf`);
+        return;
+      }
 
       /*
        * =================================================
        * INTEGRATED ACTIVITIES ONLY
        * =================================================
        */
-
-      if (
-        choice ===
-        'Integrated Activities'
-      ) {
+      if (choice === 'Integrated Activities') {
         const tableHead = [[
-          'N°',
-          'Massar Code',
-          'Student Name',
+          'No.',
+          "Student's Name",
           'Discipline /5',
           'Participation /5',
           'Copybook /5',
@@ -1536,164 +2020,70 @@ export function AssessmentsPage() {
           'Total /20',
         ]];
 
-        const tableBody =
-          classStudents.map(
-            (student, index) => {
-              const integrated =
-                getIntegratedRecord(
-                  student.id
-                );
+        const tableBody = classStudents.map((student, index) => {
+          const integrated = getIntegratedRecord(student.id);
 
-              return [
-                String(index + 1),
-                student.massarCode ?? '',
-                student.name,
-                integrated
-                  ? formatScoreOutOf(
-                      integrated.discipline,
-                      5
-                    )
-                  : '',
-                integrated
-                  ? formatScoreOutOf(
-                      integrated.participation,
-                      5
-                    )
-                  : '',
-                integrated
-                  ? formatScoreOutOf(
-                      integrated.copybook,
-                      5
-                    )
-                  : '',
-                integrated
-                  ? formatScoreOutOf(
-                      integrated.projects,
-                      5
-                    )
-                  : '',
-                integrated
-                  ? formatScoreOutOf(
-                      integrated.total,
-                      20
-                    )
-                  : '',
-              ];
-            }
-          );
+          return [
+            String(index + 1),
+            student.name,
+            integrated ? formatScore(integrated.discipline) : '',
+            integrated ? formatScore(integrated.participation) : '',
+            integrated ? formatScore(integrated.copybook) : '',
+            integrated ? formatScore(integrated.projects) : '',
+            integrated ? formatScoreOutOf(integrated.total, 20) : '',
+          ];
+        });
 
         autoTable(doc, {
           head: tableHead,
           body: tableBody,
-          startY: 49,
+          startY: 56,
+          margin: { left: margin, right: margin, bottom: 13 },
           theme: 'grid',
+          tableWidth: pageWidth - margin * 2,
           styles: {
-            font: 'Amiri',
-            fontStyle: 'normal',
+            font: 'helvetica',
             fontSize: 7,
-            textColor: [0, 0, 0],
-            lineColor: [0, 0, 0],
-            lineWidth: 0.2,
-            cellPadding: 2,
+            textColor: [25, 25, 25],
+            lineColor: GOLD_LIGHT,
+            lineWidth: 0.25,
+            cellPadding: 1.8,
+            minCellHeight: 6,
             valign: 'middle',
             halign: 'center',
           },
           headStyles: {
-            font: 'Amiri',
+            font: 'helvetica',
             fontStyle: 'normal',
             fontSize: 7,
-            textColor: [0, 0, 0],
-            fillColor: [242, 242, 242],
-            lineColor: [0, 0, 0],
-            lineWidth: 0.2,
-            halign: 'center',
-            valign: 'middle',
+            textColor: [255, 255, 255],
+            fillColor: NAVY,
+            lineColor: [255, 255, 255],
+            lineWidth: 0.25,
+          },
+          alternateRowStyles: { fillColor: [255, 252, 245] },
+          didParseCell: (hookData) => {
+            hookData.cell.styles.font = 'helvetica';
+            if (hookData.section === 'body' && hookData.column.index === 1) {
+              hookData.cell.styles.font = 'Amiri';
+            }
           },
           columnStyles: {
-            0: {
-              cellWidth: 12,
-              halign: 'center',
-            },
-            1: {
-              cellWidth: 35,
-              halign: 'center',
-            },
-            2: {
-              cellWidth: 70,
-              halign: 'left',
-            },
-            3: {
-              cellWidth: 25,
-              halign: 'center',
-            },
-            4: {
-              cellWidth: 30,
-              halign: 'center',
-            },
-            5: {
-              cellWidth: 25,
-              halign: 'center',
-            },
-            6: {
-              cellWidth: 25,
-              halign: 'center',
-            },
-            7: {
-              cellWidth: 28,
-              halign: 'center',
-              fontStyle: 'bold',
-            },
-          },
-          margin: {
-            left: 10,
-            right: 10,
-            top: 49,
-            bottom: 15,
-          },
-          didParseCell: (hookData) => {
-            if (
-              hookData.column.index === 7
-            ) {
-              hookData.cell.styles.fontStyle =
-                'bold';
-            }
-
-            hookData.cell.styles.font =
-              'Amiri';
+            0: { cellWidth: 10 },
+            1: { cellWidth: 70, halign: 'left' },
+            2: { cellWidth: 24 },
+            3: { cellWidth: 28 },
+            4: { cellWidth: 24 },
+            5: { cellWidth: 24 },
+            6: { cellWidth: 18, fontStyle: 'normal' },
           },
           didDrawPage: () => {
-            const pageHeight =
-              doc.internal.pageSize.getHeight();
-
-            const pageNumber =
-              doc.getNumberOfPages();
-
-            doc.setFont(
-              'Amiri',
-              'normal'
-            );
-
-            doc.setFontSize(7);
-
-            doc.setTextColor(
-              90,
-              90,
-              90
-            );
-
-            doc.text(
-              `Page ${pageNumber}`,
-              pageWidth - 10,
-              pageHeight - 7,
-              { align: 'right' }
-            );
+            applyBaseFont();
+            drawFooter(doc.getNumberOfPages());
           },
         });
 
-        doc.save(
-          `Integrated-Activities-${safeClassName}-${safeTerm}.pdf`
-        );
-
+        doc.save(`Integrated-Activities-${safeClassName}-${safeTerm}.pdf`);
         return;
       }
 
@@ -1702,424 +2092,80 @@ export function AssessmentsPage() {
        * INDIVIDUAL OFFICIAL ASSESSMENT
        * =================================================
        */
-
-      if (
-        choice !== 'all'
-      ) {
-        const max =
-          choice === 'Quiz 1' ||
-          choice === 'Quiz 2'
-            ? 10
-            : 20;
-
-        const tableHead = [[
-          'N°',
-          'Massar Code',
-          'Student Name',
-          `${choice} /${max}`,
-          'Percentage',
-        ]];
-
-        const tableBody =
-          classStudents.map(
-            (student, index) => {
-              const score =
-                getAssessmentScore(
-                  student.id,
-                  choice as OfficialAssessment
-                );
-
-              const percentage =
-                score !== null
-                  ? `${(
-                      (score / max) *
-                      100
-                    ).toFixed(1)}%`
-                  : '';
-
-              return [
-                String(index + 1),
-                student.massarCode ?? '',
-                student.name,
-                score !== null
-                  ? formatScoreOutOf(
-                      score,
-                      max
-                    )
-                  : '',
-                percentage,
-              ];
-            }
-          );
-
-        autoTable(doc, {
-          head: tableHead,
-          body: tableBody,
-          startY: 49,
-          theme: 'grid',
-          styles: {
-            font: 'Amiri',
-            fontStyle: 'normal',
-            fontSize: 8,
-            textColor: [0, 0, 0],
-            lineColor: [0, 0, 0],
-            lineWidth: 0.2,
-            cellPadding: 2.5,
-            valign: 'middle',
-            halign: 'center',
-          },
-          headStyles: {
-            font: 'Amiri',
-            fontStyle: 'normal',
-            fontSize: 8,
-            textColor: [0, 0, 0],
-            fillColor: [242, 242, 242],
-            lineColor: [0, 0, 0],
-            lineWidth: 0.2,
-            halign: 'center',
-            valign: 'middle',
-          },
-          columnStyles: {
-            0: {
-              cellWidth: 15,
-              halign: 'center',
-            },
-            1: {
-              cellWidth: 45,
-              halign: 'center',
-            },
-            2: {
-              cellWidth: 100,
-              halign: 'left',
-            },
-            3: {
-              cellWidth: 45,
-              halign: 'center',
-              fontStyle: 'bold',
-            },
-            4: {
-              cellWidth: 35,
-              halign: 'center',
-            },
-          },
-          margin: {
-            left: 10,
-            right: 10,
-            top: 49,
-            bottom: 15,
-          },
-          didParseCell: (hookData) => {
-            if (
-              hookData.column.index === 3
-            ) {
-              hookData.cell.styles.fontStyle =
-                'bold';
-            }
-
-            hookData.cell.styles.font =
-              'Amiri';
-          },
-          didDrawPage: () => {
-            const pageHeight =
-              doc.internal.pageSize.getHeight();
-
-            const pageNumber =
-              doc.getNumberOfPages();
-
-            doc.setFont(
-              'Amiri',
-              'normal'
-            );
-
-            doc.setFontSize(7);
-
-            doc.setTextColor(
-              90,
-              90,
-              90
-            );
-
-            doc.text(
-              `Page ${pageNumber}`,
-              pageWidth - 10,
-              pageHeight - 7,
-              { align: 'right' }
-            );
-          },
-        });
-
-        doc.save(
-          `${choice.replace(
-            /\s+/g,
-            '-'
-          )}-${safeClassName}-${safeTerm}.pdf`
-        );
-
-        return;
-      }
-
-      /*
-       * =================================================
-       * ALL ASSESSMENTS
-       * =================================================
-       */
+      const max = choice === 'Quiz 1' || choice === 'Quiz 2' ? 10 : 20;
 
       const tableHead = [[
-        'N°',
-        'Massar Code',
-        'Student Name',
-        'Quiz 1',
-        'Quiz 2',
-        'Quiz Total /20',
-        'Global Test /20',
-        'Integrated Activities /20',
-        'Remarks',
+        'No.',
+        "Student's Name",
+        `${choice} /${max}`,
+        'Percentage',
       ]];
 
-      const tableBody =
-        classStudents.map(
-          (student, index) => {
-            const quiz1 =
-              getAssessmentScore(
-                student.id,
-                'Quiz 1'
-              );
+      const tableBody = classStudents.map((student, index) => {
+        const score = getAssessmentScore(student.id, choice as OfficialAssessment);
+        const percentage =
+          score !== null ? `${((score / max) * 100).toFixed(1)}%` : '';
 
-            const quiz2 =
-              getAssessmentScore(
-                student.id,
-                'Quiz 2'
-              );
-
-            const globalTest =
-              getAssessmentScore(
-                student.id,
-                'Global Test'
-              );
-
-            const integrated =
-              getIntegratedRecord(
-                student.id
-              );
-
-            const quizTotal =
-              quiz1 !== null &&
-              quiz2 !== null
-                ? quiz1 + quiz2
-                : null;
-
-            const components: number[] = [];
-
-            if (
-              quizTotal !== null
-            ) {
-              components.push(
-                quizTotal
-              );
-            }
-
-            if (
-              globalTest !== null
-            ) {
-              components.push(
-                globalTest
-              );
-            }
-
-            const integratedTotal =
-              integrated?.total ??
-              null;
-
-            if (
-              integratedTotal !== null
-            ) {
-              components.push(
-                integratedTotal
-              );
-            }
-
-            const grade =
-              components.length > 0
-                ? components.reduce(
-                    (
-                      total,
-                      value
-                    ) =>
-                      total + value,
-                    0
-                  ) /
-                  components.length
-                : 0;
-
-            return [
-              String(index + 1),
-              student.massarCode ?? '',
-              student.name,
-              quiz1 !== null
-                ? formatScoreOutOf(
-                    quiz1,
-                    10
-                  )
-                : '',
-              quiz2 !== null
-                ? formatScoreOutOf(
-                    quiz2,
-                    10
-                  )
-                : '',
-              quizTotal !== null
-                ? formatScoreOutOf(
-                    quizTotal,
-                    20
-                  )
-                : '',
-              globalTest !== null
-                ? formatScoreOutOf(
-                    globalTest,
-                    20
-                  )
-                : '',
-              integratedTotal !== null
-                ? formatScoreOutOf(
-                    integratedTotal,
-                    20
-                  )
-                : '',
-              getRemarks(grade),
-            ];
-          }
-        );
+        return [
+          String(index + 1),
+          student.name,
+          score !== null ? formatScoreOutOf(score, max) : '',
+          percentage,
+        ];
+      });
 
       autoTable(doc, {
         head: tableHead,
         body: tableBody,
-        startY: 49,
+        startY: 56,
+        margin: { left: margin, right: margin, bottom: 13 },
         theme: 'grid',
+        tableWidth: pageWidth - margin * 2,
         styles: {
-          font: 'Amiri',
-          fontStyle: 'normal',
-          fontSize: 7,
-          textColor: [0, 0, 0],
-          lineColor: [0, 0, 0],
-          lineWidth: 0.2,
+          font: 'helvetica',
+          fontSize: 7.5,
+          textColor: [25, 25, 25],
+          lineColor: GOLD_LIGHT,
+          lineWidth: 0.25,
           cellPadding: 2,
+          minCellHeight: 6,
           valign: 'middle',
           halign: 'center',
         },
         headStyles: {
-          font: 'Amiri',
+          font: 'helvetica',
           fontStyle: 'normal',
-          fontSize: 7,
-          textColor: [0, 0, 0],
-          fillColor: [242, 242, 242],
-          lineColor: [0, 0, 0],
-          lineWidth: 0.2,
-          halign: 'center',
-          valign: 'middle',
+          fontSize: 7.5,
+          textColor: [255, 255, 255],
+          fillColor: NAVY,
+          lineColor: [255, 255, 255],
+          lineWidth: 0.25,
+        },
+        alternateRowStyles: { fillColor: [255, 252, 245] },
+        didParseCell: (hookData) => {
+          hookData.cell.styles.font = 'helvetica';
+          if (hookData.section === 'body' && hookData.column.index === 1) {
+            hookData.cell.styles.font = 'Amiri';
+          }
         },
         columnStyles: {
-          0: {
-            cellWidth: 9,
-            halign: 'center',
-          },
-          1: {
-            cellWidth: 27,
-            halign: 'center',
-          },
-          2: {
-            cellWidth: 55,
-            halign: 'left',
-          },
-          3: {
-            cellWidth: 20,
-            halign: 'center',
-          },
-          4: {
-            cellWidth: 20,
-            halign: 'center',
-          },
-          5: {
-            cellWidth: 27,
-            halign: 'center',
-            fontStyle: 'bold',
-          },
-          6: {
-            cellWidth: 27,
-            halign: 'center',
-            fontStyle: 'bold',
-          },
-          7: {
-            cellWidth: 36,
-            halign: 'center',
-            fontStyle: 'bold',
-          },
-          8: {
-            cellWidth: 32,
-            halign: 'center',
-            fontStyle: 'bold',
-          },
-        },
-        margin: {
-          left: 10,
-          right: 10,
-          top: 49,
-          bottom: 15,
-        },
-        didParseCell: (hookData) => {
-          if (
-            hookData.column.index === 5 ||
-            hookData.column.index === 6 ||
-            hookData.column.index === 7 ||
-            hookData.column.index === 8
-          ) {
-            hookData.cell.styles.fontStyle =
-              'bold';
-          }
-
-          hookData.cell.styles.font =
-            'Amiri';
+          0: { cellWidth: 14 },
+          1: { cellWidth: 105, halign: 'left' },
+          2: { cellWidth: 35, fontStyle: 'normal' },
+          3: { cellWidth: 35 },
         },
         didDrawPage: () => {
-          const pageHeight =
-            doc.internal.pageSize.getHeight();
-
-          const pageNumber =
-            doc.getNumberOfPages();
-
-          doc.setFont(
-            'Amiri',
-            'normal'
-          );
-
-          doc.setFontSize(7);
-
-          doc.setTextColor(
-            90,
-            90,
-            90
-          );
-
-          doc.text(
-            `Page ${pageNumber}`,
-            pageWidth - 10,
-            pageHeight - 7,
-            { align: 'right' }
-          );
+          applyBaseFont();
+          drawFooter(doc.getNumberOfPages());
         },
       });
 
       doc.save(
-        `Continuous-Assessment-${safeClassName}-${safeTerm}.pdf`
+        `${choice.replace(/\s+/g, '-')}-${safeClassName}-${safeTerm}.pdf`
       );
     } catch (error) {
-      console.error(
-        'PDF generation error:',
-        error
-      );
-
-      alert(
-        'Could not generate the PDF file. Please check the browser console.'
-      );
+      console.error('PDF generation error:', error);
+      alert('Could not generate the PDF file. Please check the browser console.');
     }
   };
 
@@ -2375,7 +2421,10 @@ export function AssessmentsPage() {
                     className="form-select w-auto min-w-[190px]"
                   >
                     <option value="all">
-                      All Assessments
+                      Personal Grading Sheet
+                    </option>
+                    <option value="official">
+                      Official School Sheet
                     </option>
                     <option value="Quiz 1">
                       Quiz 1
