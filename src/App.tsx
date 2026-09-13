@@ -15,7 +15,6 @@ import { ReportsPage } from '@/pages/ReportsPage';
 import AcademicCalendarPage from '@/pages/AcademicCalendarPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
-import { BackupBar } from '@/components/BackupBar';
 
 import {
   LayoutDashboard,
@@ -172,6 +171,12 @@ function App() {
   const currentPage =
     NAV.find((item) => item.id === page)?.label ?? 'Dashboard';
 
+  // Keep the mobile sidebar closed whenever the active page changes.
+  // This prevents it from reopening after navigation/rerenders.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [page]);
+
   function handleNavigation(id: PageId) {
     setPage(id);
     setMobileOpen(false);
@@ -288,12 +293,6 @@ function App() {
 
           </div>
 
-          {/* Data / Backup */}
-
-          <div className="mb-3 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
-            <BackupBar />
-          </div>
-
           {/* Sign out */}
 
           <button
@@ -351,7 +350,7 @@ function App() {
       {/* Desktop Sidebar */}
 
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200 bg-white lg:block">
-        <SidebarContent />
+        {SidebarContent()}
       </aside>
 
       {/* Mobile Sidebar */}
@@ -375,7 +374,7 @@ function App() {
               <X size={19} />
             </button>
 
-            <SidebarContent />
+            {SidebarContent()}
 
           </aside>
 

@@ -159,8 +159,6 @@ export type HealthConsideration =
 
 export interface Student {
   id: string;
-
-  /* Basic information */
   massarCode: string;
   name: string;
   nameAr?: string;
@@ -168,20 +166,17 @@ export interface Student {
   classId: string;
   gender: Gender;
 
-  /* Educational profile */
   learningStyle?: LearningStyle;
   learningPreference?: LearningPreference;
   participationLevel?: ParticipationLevel;
   learningBehaviour?: LearningBehaviour;
   motivationLevel?: MotivationLevel;
-
   strengths?: string;
   areasForImprovement?: string;
   learningNeeds?: string;
   educationalGoals?: string;
   educationalNotes?: string;
 
-  /* Language */
   firstLanguage?: string;
   otherLanguages?: string;
 
@@ -194,7 +189,6 @@ export interface Student {
   grammarLevel?: SkillLevel;
   pronunciationLevel?: SkillLevel;
 
-  /* Classroom behaviour */
   classroomBehaviour?: ClassroomBehaviour;
   attentionLevel?: AttentionLevel;
   homeworkCompletion?: HomeworkCompletion;
@@ -203,35 +197,29 @@ export interface Student {
   teacherInteraction?: TeacherInteraction;
   behaviourNotes?: string;
 
-  /* Attendance */
   attendancePattern?: AttendancePattern;
   frequentLateness?: boolean;
   engagementLevel?: ParticipationLevel;
   absenceReason?: string;
   engagementNotes?: string;
 
-  /* Social / family context */
   livingArrangement?: string;
   familySupport?: FamilySupport;
   homeLearningEnvironment?: HomeLearningEnvironment;
   accessToLearningResources?: ResourceAccess;
   transportationDifficulty?: DifficultyLevel;
-
   familyFollowUp?: FamilyFollowUp;
   socialSupport?: string;
   socialEducationalNotes?: string;
 
-  /* Health / educational support */
   healthConsideration?: HealthConsideration;
   healthNotes?: string;
   specialEducationalNeeds?: AccommodationStatus;
   learningAccommodationNeeded?: AccommodationStatus;
   accessibilityNeeds?: string;
-
   supportRequired?: SupportRequired;
   supportNotes?: string;
 
-  /* Interests */
   interests?: string;
   hobbies?: string;
   favouriteTopics?: string;
@@ -239,12 +227,10 @@ export interface Student {
   careerInterests?: string;
   preferredActivities?: string;
 
-  /* Teacher support plan */
   recommendedSupport?: string;
   interventionNeeded?: string;
   effectiveStrategies?: string;
   strategiesToAvoid?: string;
-
   shortTermGoal?: string;
   followUpDate?: string;
   teacherNotes?: string;
@@ -305,6 +291,21 @@ export interface AssessmentRecord {
 }
 
 /* =====================================================
+   DIAGNOSTIC TEST
+===================================================== */
+
+export interface DiagnosticTestRecord {
+  id: string;
+  studentId: string;
+  classId: string;
+  academicYear: string;
+  date: string;
+  term: Term;
+  score: number;
+  maxScore: number;
+}
+
+/* =====================================================
    INTEGRATED ACTIVITIES
 ===================================================== */
 
@@ -315,12 +316,10 @@ export interface IntegratedActivityRecord {
   academicYear: string;
   term: Term;
   date: string;
-
   discipline: number;
   participation: number;
   copybook: number;
   projects: number;
-
   total: number;
 }
 
@@ -331,13 +330,12 @@ export interface IntegratedActivityRecord {
 export interface AppData {
   schoolName?: string;
   teacherName?: string;
-
   classes: ClassRoom[];
   students: Student[];
-
   attendance: AttendanceRecord[];
   assessments: AssessmentRecord[];
   integratedActivities: IntegratedActivityRecord[];
+  diagnosticTests?: DiagnosticTestRecord[];
 }
 
 /* =====================================================
@@ -357,18 +355,13 @@ export type Status =
 
 export interface StudentSummary {
   totalSessions: number;
-
   present: number;
   late: number;
   absent: number;
-
   attendanceRate: number;
   attendanceConcern: boolean;
-
   averageScore: number | null;
-
   progress: Progress;
   progressConcern: boolean;
-
   status: Status;
 }

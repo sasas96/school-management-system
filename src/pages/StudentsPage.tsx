@@ -702,13 +702,7 @@ export function StudentsPage() {
       alert('Please select a class.');
       return;
     }
-
-    if (form.gender !== 'Male' && form.gender !== 'Female') {
-      alert('Please select the student gender.');
-      return;
-    }
-
-    const studentData: Student = {
+const studentData: Student = {
       ...(form as Student),
       id:
         editingStudent?.id ||
@@ -718,8 +712,7 @@ export function StudentsPage() {
       nameAr: form.nameAr.trim(),
       massarCode: form.massarCode?.trim() || '',
       classId: form.classId,
-      gender: form.gender,
-    };
+};
 
     try {
       if (editingStudent) {
@@ -1223,8 +1216,7 @@ export function StudentsPage() {
             classId:
               importClassId,
 
-            // Gender is required by the current Student model.
-            // Excel import does not ask the teacher for it.
+            // Backend compatibility only. Gender is not shown or requested in the UI.
             gender:
               'Male',
           } as Student;
@@ -1761,21 +1753,7 @@ export function StudentsPage() {
                   ]}
                 />
 
-                <Select
-                  label="Gender *"
-                  value={form.gender || ''}
-                  onChange={(value) =>
-                    handleChange(
-                      'gender',
-                      value as Student['gender']
-                    )
-                  }
-                  options={[
-                    { value: '', label: 'Select gender' },
-                    { value: 'Male', label: 'Male' },
-                    { value: 'Female', label: 'Female' },
-                  ]}
-                />
+
 
               </div>
 
