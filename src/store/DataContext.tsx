@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -546,17 +547,7 @@ function emptyData(): AppData {
    LOAD FROM SUPABASE
 ===================================================== */
 
-async function loadRemoteData(): Promise<AppData> {
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    throw new Error(
-      'No authenticated user'
-    );
-  }
+async function loadRemoteData(userId: string): Promise<AppData> {
 
   const [
     classesResult,
@@ -569,32 +560,32 @@ async function loadRemoteData(): Promise<AppData> {
     supabase
       .from('classes')
       .select('*')
-      .eq('user_id', user.id),
+      .eq('user_id', userId),
 
     supabase
       .from('students')
       .select('*')
-      .eq('user_id', user.id),
+      .eq('user_id', userId),
 
     supabase
       .from('attendance')
       .select('*')
-      .eq('user_id', user.id),
+      .eq('user_id', userId),
 
     supabase
       .from('assessments')
       .select('*')
-      .eq('user_id', user.id),
+      .eq('user_id', userId),
 
     supabase
       .from('integrated_activities')
       .select('*')
-      .eq('user_id', user.id),
+      .eq('user_id', userId),
 
     supabase
       .from('diagnostic_tests')
       .select('*')
-      .eq('user_id', user.id),
+      .eq('user_id', userId),
   ]);
 
   if (classesResult.error)
@@ -612,8 +603,13 @@ async function loadRemoteData(): Promise<AppData> {
   if (activitiesResult.error)
     throw activitiesResult.error;
 
-  if (diagnosticsResult.error)
-    throw diagnosticsResult.error;
+  // diagnostic_tests is optional in the current database.
+  // If the table does not exist yet, keep the rest of the
+  // teacher data usable instead of failing the whole load.
+  const diagnosticRows =
+    diagnosticsResult.error
+      ? []
+      : (diagnosticsResult.data ?? []);
 
   return {
     schoolName: '',
@@ -640,8 +636,7 @@ async function loadRemoteData(): Promise<AppData> {
         .map(activityFromDb),
 
     diagnosticTests:
-      (diagnosticsResult.data ?? [])
-        .map(diagnosticFromDb),
+      diagnosticRows.map(diagnosticFromDb),
   };
 }
 
@@ -650,20 +645,9 @@ async function loadRemoteData(): Promise<AppData> {
 ===================================================== */
 
 async function saveRemoteData(
-  data: AppData
+  data: AppData,
+  userId: string
 ) {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    throw new Error(
-      'No authenticated user'
-    );
-  }
-
-  const userId = user.id;
 
   const students =
     data.students.map(
@@ -759,8 +743,8 @@ async function saveRemoteData(
   if (existingActivities.error)
     throw existingActivities.error;
 
-  if (existingDiagnostics.error)
-    throw existingDiagnostics.error;
+  const diagnosticsTableAvailable =
+    !existingDiagnostics.error;
 
   const current = {
     students:
@@ -910,7 +894,10 @@ async function saveRemoteData(
      DELETE REMOVED DIAGNOSTIC TESTS
   =================================================== */
 
-  if (diagnosticIds.length > 0) {
+  if (
+    diagnosticsTableAvailable &&
+    diagnosticIds.length > 0
+  ) {
     const result =
       await supabase
         .from('diagnostic_tests')
@@ -1012,7 +999,10 @@ async function saveRemoteData(
      UPSERT DIAGNOSTIC TESTS
   =================================================== */
 
-  if (diagnostics.length > 0) {
+  if (
+    diagnosticsTableAvailable &&
+    diagnostics.length > 0
+  ) {
     const result =
       await supabase
         .from('diagnostic_tests')
@@ -1032,52 +1022,77 @@ export function DataProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [data, setDataState] =
-    useState<AppData>(
-      emptyData()
-    );
+  const [data, setDataState] = useState<AppData>(emptyData());
+  const [loaded, setLoaded] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
 
-  const [loaded, setLoaded] =
-    useState(false);
+  // Each load gets a unique number. If the auth user changes while an
+  // older request is still running, the older request is ignored.
+  const loadVersion = useRef(0);
 
   /* ===================================================
-     LOAD DATA
+     LOAD DATA FOR A SPECIFIC USER
+  =================================================== */
+
+  const loadUserData = async (userId: string, version: number) => {
+    try {
+      const remote = await loadRemoteData(userId);
+
+      if (loadVersion.current !== version) return;
+
+      setDataState(remote);
+      setAuthUserId(userId);
+      setLoaded(true);
+      setInitialLoadComplete(true);
+    } catch (error) {
+      console.error('Failed to load Supabase data:', error);
+
+      if (loadVersion.current !== version) return;
+
+      // Never allow an unsuccessful/partial load to become a valid
+      // autosave state. This is the protection against wiping data.
+      setLoaded(true);
+      setInitialLoadComplete(false);
+    }
+  };
+
+  /* ===================================================
+     INITIAL AUTH + DATA LOAD
   =================================================== */
 
   useEffect(() => {
     let mounted = true;
+    const version = ++loadVersion.current;
 
     async function load() {
       try {
         const {
           data: { session },
-        } =
-          await supabase.auth.getSession();
+          error,
+        } = await supabase.auth.getSession();
+
+        if (!mounted || loadVersion.current !== version) return;
+
+        if (error) throw error;
 
         if (!session) {
-          if (mounted) {
-            setLoaded(true);
-          }
-
+          setAuthUserId(null);
+          setDataState(emptyData());
+          setLoaded(true);
+          setInitialLoadComplete(false);
           return;
         }
 
-        const remote =
-          await loadRemoteData();
-
-        if (mounted) {
-          setDataState(remote);
-          setLoaded(true);
-        }
+        await loadUserData(session.user.id, version);
       } catch (error) {
-        console.error(
-          'Failed to load Supabase data:',
-          error
-        );
+        console.error('Failed to initialize authentication/data:', error);
 
-        if (mounted) {
-          setLoaded(true);
-        }
+        if (!mounted || loadVersion.current !== version) return;
+
+        setAuthUserId(null);
+        setLoaded(true);
+        setInitialLoadComplete(false);
       }
     }
 
@@ -1089,44 +1104,109 @@ export function DataProvider({
   }, []);
 
   /* ===================================================
+     AUTH STATE
+  =================================================== */
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        ++loadVersion.current;
+        setAuthUserId(null);
+        setDataState(emptyData());
+        setLoaded(true);
+        setInitialLoadComplete(false);
+        return;
+      }
+
+      // Token refresh does not change the user. Do not reload or save data
+      // just because a token was refreshed.
+      if (event === 'TOKEN_REFRESHED') return;
+
+      if (
+        event === 'SIGNED_IN' ||
+        event === 'USER_UPDATED'
+      ) {
+        const userId = session.user.id;
+        const version = ++loadVersion.current;
+
+        // Important: clear the previous user's local state immediately and
+        // block autosave until the new user's data has loaded successfully.
+        setInitialLoadComplete(false);
+        setLoaded(false);
+        setAuthUserId(userId);
+        setDataState(emptyData());
+
+        void loadUserData(userId, version);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  /* ===================================================
      AUTO SYNC
   =================================================== */
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !initialLoadComplete || !authUserId) return;
+
+    let cancelled = false;
 
     async function sync() {
       try {
-        await saveRemoteData(data);
+        // Verify that the current browser session still belongs to the same
+        // user whose data was loaded. Never write data across user changes.
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser();
+
+        if (cancelled) return;
+
+        if (error) {
+          console.error('Authentication error while saving:', error);
+          return;
+        }
+
+        if (!user || user.id !== authUserId) {
+          console.warn('User changed during save. Skipping autosave.');
+          return;
+        }
+
+        await saveRemoteData(data, authUserId);
       } catch (error) {
-        console.error(
-          'Failed to save Supabase data:',
-          error
-        );
+        if (!cancelled) {
+          console.error('Failed to save Supabase data:', error);
+        }
       }
     }
 
-    sync();
-  }, [data, loaded]);
+    void sync();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data, loaded, initialLoadComplete, authUserId]);
 
   /* ===================================================
      SET DATA
   =================================================== */
 
-  const setData:
-    React.Dispatch<
-      React.SetStateAction<AppData>
-    > = (value) => {
-      setDataState(value);
-    };
+  const setData: React.Dispatch<React.SetStateAction<AppData>> = (
+    value
+  ) => {
+    setDataState(value);
+  };
 
   /* ===================================================
      IMPORT DATA
   =================================================== */
 
-  const importData = async (
-    incoming: AppData
-  ) => {
+  const importData = async (incoming: AppData) => {
     setDataState(incoming);
   };
 
@@ -1135,10 +1215,7 @@ export function DataProvider({
   =================================================== */
 
   const resetToDemo = async () => {
-    const demo =
-      demoData();
-
-    setDataState(demo);
+    setDataState(demoData());
   };
 
   /* ===================================================
@@ -1146,122 +1223,187 @@ export function DataProvider({
   =================================================== */
 
   const clearAll = async () => {
-    setDataState(
-      emptyData()
-    );
+    setDataState(emptyData());
   };
 
   /* ===================================================
      ADD STUDENT
   =================================================== */
 
-  const addStudent = async (
-    student: Student
-  ) => {
-    setDataState(
-      (currentData) => ({
-        ...currentData,
+  const addStudent = async (student: Student) => {
+    if (!authUserId || !initialLoadComplete) {
+      throw new Error('Data is not ready. Please wait and try again.');
+    }
 
-        students: [
-          ...currentData.students,
-          student,
-        ],
-      })
-    );
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      throw authError ?? new Error('No authenticated user.');
+    }
+
+    if (user.id !== authUserId) {
+      throw new Error('Authentication changed. Please refresh and try again.');
+    }
+
+    if (student.gender !== 'Male' && student.gender !== 'Female') {
+      throw new Error('Student gender is required. Please select Male or Female.');
+    }
+
+    const payload = studentToDb(student, user.id);
+
+    const { data: inserted, error } = await supabase
+      .from('students')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('ADD STUDENT FAILED:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+      throw error;
+    }
+
+    const savedStudent = studentFromDb(inserted);
+
+    setDataState((currentData) => ({
+      ...currentData,
+      students: [...currentData.students, savedStudent],
+    }));
   };
 
   /* ===================================================
      UPDATE STUDENT
   =================================================== */
 
-  const updateStudent = async (
-    student: Student
-  ) => {
-    setDataState(
-      (currentData) => ({
-        ...currentData,
+  const updateStudent = async (student: Student) => {
+    if (!authUserId || !initialLoadComplete) {
+      throw new Error('Data is not ready. Please wait and try again.');
+    }
 
-        students:
-          currentData.students.map(
-            (existingStudent) =>
-              existingStudent.id === student.id
-                ? student
-                : existingStudent
-          ),
-      })
-    );
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      throw authError ?? new Error('No authenticated user.');
+    }
+
+    if (user.id !== authUserId) {
+      throw new Error('Authentication changed. Please refresh and try again.');
+    }
+
+    if (student.gender !== 'Male' && student.gender !== 'Female') {
+      throw new Error('Student gender is required. Please select Male or Female.');
+    }
+
+    const payload = studentToDb(student, user.id);
+
+    const { data: updated, error } = await supabase
+      .from('students')
+      .update(payload)
+      .eq('id', student.id)
+      .eq('user_id', user.id)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('UPDATE STUDENT FAILED:', error);
+      throw error;
+    }
+
+    const savedStudent = studentFromDb(updated);
+
+    setDataState((currentData) => ({
+      ...currentData,
+      students: currentData.students.map((existingStudent) =>
+        existingStudent.id === savedStudent.id
+          ? savedStudent
+          : existingStudent
+      ),
+    }));
   };
 
   /* ===================================================
      DELETE STUDENT
   =================================================== */
 
-  const deleteStudent = async (
-    studentId: string
-  ) => {
-    setDataState(
-      (currentData) => ({
-        ...currentData,
+  const deleteStudent = async (studentId: string) => {
+    if (!authUserId || !initialLoadComplete) {
+      throw new Error('Data is not ready. Please wait and try again.');
+    }
 
-        students:
-          currentData.students.filter(
-            (student) =>
-              student.id !== studentId
-          ),
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-        attendance:
-          currentData.attendance.filter(
-            (record) =>
-              record.studentId !== studentId
-          ),
+    if (authError || !user) {
+      throw authError ?? new Error('No authenticated user.');
+    }
 
-        assessments:
-          currentData.assessments.filter(
-            (assessment) =>
-              assessment.studentId !==
-              studentId
-          ),
+    if (user.id !== authUserId) {
+      throw new Error('Authentication changed. Please refresh and try again.');
+    }
 
-        integratedActivities:
-          currentData.integratedActivities.filter(
-            (activity) =>
-              activity.studentId !==
-              studentId
-          ),
+    const { error } = await supabase
+      .from('students')
+      .delete()
+      .eq('id', studentId)
+      .eq('user_id', user.id);
 
-        diagnosticTests:
-          (currentData.diagnosticTests ?? []).filter(
-            (diagnostic) =>
-              diagnostic.studentId !==
-              studentId
-          ),
-      })
-    );
+    if (error) {
+      console.error('DELETE STUDENT FAILED:', error);
+      throw error;
+    }
+
+    setDataState((currentData) => ({
+      ...currentData,
+      students: currentData.students.filter(
+        (student) => student.id !== studentId
+      ),
+      attendance: currentData.attendance.filter(
+        (record) => record.studentId !== studentId
+      ),
+      assessments: currentData.assessments.filter(
+        (assessment) => assessment.studentId !== studentId
+      ),
+      integratedActivities: currentData.integratedActivities.filter(
+        (activity) => activity.studentId !== studentId
+      ),
+      diagnosticTests: (currentData.diagnosticTests ?? []).filter(
+        (diagnostic) => diagnostic.studentId !== studentId
+      ),
+    }));
   };
 
   /* ===================================================
      CONTEXT VALUE
   =================================================== */
 
-  const value =
-    useMemo<DataContextValue>(
-      () => ({
-        data,
-        setData,
-        importData,
-        resetToDemo,
-        clearAll,
-        addStudent,
-        updateStudent,
-        deleteStudent,
-      }),
-      [data]
-    );
+  const value = useMemo<DataContextValue>(
+    () => ({
+      data,
+      setData,
+      importData,
+      resetToDemo,
+      clearAll,
+      addStudent,
+      updateStudent,
+      deleteStudent,
+    }),
+    [data]
+  );
 
   return (
-    <DataContext.Provider
-      value={value}
-    >
+    <DataContext.Provider value={value}>
       {children}
     </DataContext.Provider>
   );

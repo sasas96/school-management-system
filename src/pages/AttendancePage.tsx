@@ -441,6 +441,64 @@ export function AttendancePage() {
     ]);
 
   /* ===================================================
+     DEFAULT DAILY ATTENDANCE
+
+     Every student starts as Present for the selected
+     class/date. The teacher only needs to change students
+     who are Late or Absent.
+     =================================================== */
+
+  useEffect(() => {
+    if (
+      viewMode !== 'Daily' ||
+      !selectedClassId ||
+      classStudents.length === 0
+    ) {
+      return;
+    }
+
+    setData((currentData) => {
+      let changed = false;
+      const attendance = [...currentData.attendance];
+
+      for (const student of classStudents) {
+        const existingIndex = attendance.findIndex(
+          (record) =>
+            record.studentId === student.id &&
+            record.classId === selectedClassId &&
+            record.date === selectedDate
+        );
+
+        if (existingIndex === -1) {
+          attendance.push({
+            id: generateAttendanceId(
+              attendance.map((record) => record.id)
+            ),
+            studentId: student.id,
+            classId: selectedClassId,
+            date: selectedDate,
+            status: 'Present',
+          });
+          changed = true;
+        }
+      }
+
+      return changed
+        ? {
+            ...currentData,
+            attendance,
+          }
+        : currentData;
+    });
+  }, [
+    viewMode,
+    selectedClassId,
+    selectedDate,
+    classStudents,
+    setData,
+  ]);
+
+  /* ===================================================
      DAILY STATUS
      =================================================== */
 

@@ -91,9 +91,7 @@ const EMPTY_INTEGRATED_VALUES = {
   projects: '',
 };
 
-// PDF identity used by the teacher's current school record.
-const PDF_SCHOOL_NAME = 'Collège Saleh El-Ouardani';
-const PDF_TEACHER_NAME = 'Ossama Lachgar';
+// PDF identity is read from the signed-in teacher profile.
 
 /*
  * =====================================================
@@ -1085,9 +1083,12 @@ export function AssessmentsPage() {
         return;
       }
 
-      const schoolName = PDF_SCHOOL_NAME;
-
-      const teacherName = PDF_TEACHER_NAME;
+      const schoolName =
+        data.schoolName?.trim() ||
+        'School Name';
+      const teacherName =
+        data.teacherName?.trim() ||
+        'Teacher Name';
 
       const pageWidth =
         doc.internal.pageSize.getWidth();
@@ -1330,12 +1331,7 @@ export function AssessmentsPage() {
 
     try {
       const doc = new jsPDF({
-        // Personal sheet stays portrait; official school sheet uses
-        // landscape so all 12 official columns fit on one page.
-        orientation:
-          choice === 'official'
-            ? 'landscape'
-            : 'portrait',
+        orientation: choice === 'official' ? 'landscape' : 'portrait',
         unit: 'mm',
         format: 'a4',
       });
@@ -1419,8 +1415,12 @@ export function AssessmentsPage() {
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 7;
 
-      const schoolName = PDF_SCHOOL_NAME;
-      const teacherName = PDF_TEACHER_NAME;
+      const schoolName =
+        data.schoolName?.trim() ||
+        'School Name';
+      const teacherName =
+        data.teacherName?.trim() ||
+        'Teacher Name';
 
       const safeClassName =
         className
@@ -1692,13 +1692,6 @@ export function AssessmentsPage() {
             const quiz2 = getAssessmentScore(student.id, 'Quiz 2');
             const globalTest = getAssessmentScore(student.id, 'Global Test');
             const integrated = getIntegratedRecord(student.id);
-            const integratedTotal = integrated
-              ? (Number(integrated.discipline) || 0) +
-                (Number(integrated.participation) || 0) +
-                (Number(integrated.copybook) || 0) +
-                (Number(integrated.projects) || 0)
-              : null;
-
             const quizTotal =
               quiz1 !== null && quiz2 !== null
                 ? quiz1 + quiz2
@@ -1712,7 +1705,7 @@ export function AssessmentsPage() {
               integrated ? formatScore(integrated.participation) : '',
               integrated ? formatScore(integrated.copybook) : '',
               integrated ? formatScore(integrated.projects) : '',
-              integratedTotal !== null ? formatScore(integratedTotal) : '',
+              integrated ? formatScoreOutOf(integrated.total, 20) : '',
               quiz1 !== null ? formatScoreOutOf(quiz1, 10) : '',
               quiz2 !== null ? formatScoreOutOf(quiz2, 10) : '',
               quizTotal !== null ? formatScoreOutOf(quizTotal, 20) : '',
@@ -1767,7 +1760,7 @@ export function AssessmentsPage() {
           styles: {
             font: 'helvetica',
             fontStyle: 'normal',
-            fontSize: 6.5,
+            fontSize: 6.2,
             textColor: [20, 20, 20],
             lineColor: [45, 45, 45],
             lineWidth: 0.2,
@@ -1792,11 +1785,11 @@ export function AssessmentsPage() {
             0: { cellWidth: 8, halign: 'center' },
             1: { cellWidth: 70, halign: 'left' },
             2: { cellWidth: 21, halign: 'center' },
-            3: { cellWidth: 20, halign: 'center' },
-            4: { cellWidth: 20, halign: 'center' },
-            5: { cellWidth: 20, halign: 'center' },
-            6: { cellWidth: 20, halign: 'center' },
-            7: { cellWidth: 21, halign: 'center' },
+            3: { cellWidth: 21, halign: 'center' },
+            4: { cellWidth: 21, halign: 'center' },
+            5: { cellWidth: 21, halign: 'center' },
+            6: { cellWidth: 21, halign: 'center' },
+            7: { cellWidth: 18, halign: 'center' },
             8: { cellWidth: 16, halign: 'center' },
             9: { cellWidth: 16, halign: 'center' },
             10: { cellWidth: 24, halign: 'center' },
@@ -1839,7 +1832,7 @@ export function AssessmentsPage() {
             { content: "Student's Name", rowSpan: 2 },
             { content: 'INTEGRATED ACTIVITIES', colSpan: 5 },
             { content: 'CONTINUOUS ASSESSMENT', colSpan: 4 },
-            { content: 'REMARK', rowSpan: 2 },
+            { content: 'Remarks', rowSpan: 2 },
           ],
           [
             'Discipline\n/5',
@@ -1863,35 +1856,31 @@ export function AssessmentsPage() {
           const quizTotal =
             quiz1 !== null && quiz2 !== null ? quiz1 + quiz2 : null;
 
-          const integratedTotal = integrated
-            ? (Number(integrated.discipline) || 0) +
-              (Number(integrated.participation) || 0) +
-              (Number(integrated.copybook) || 0) +
-              (Number(integrated.projects) || 0)
-            : null;
+          const integratedTotal = integrated?.total ?? null;
 
-          const components: number[] = [];
-          if (quizTotal !== null) components.push(quizTotal);
-          if (globalTest !== null) components.push(globalTest);
-          if (integratedTotal !== null) components.push(integratedTotal);
+          // Generate a remark only when the three main semester components
+          // are available. This avoids giving a misleading remark to an
+          // incomplete grading sheet.
+          const overallScores = [
+            integratedTotal,
+            quizTotal,
+            globalTest,
+          ].filter(
+            (score): score is number => score !== null
+          );
 
           const overallGrade =
-            components.length > 0
-              ? components.reduce((sum, value) => sum + value, 0) / components.length
+            overallScores.length === 3
+              ? overallScores.reduce(
+                  (sum, score) => sum + score,
+                  0
+                ) / overallScores.length
               : null;
 
           const remark =
-            overallGrade === null
-              ? ''
-              : overallGrade >= 16
-                ? 'Excellent'
-                : overallGrade >= 14
-                  ? 'Very Good'
-                  : overallGrade >= 12
-                    ? 'Good'
-                    : overallGrade >= 10
-                      ? 'Satisfactory'
-                      : 'Needs Improvement';
+            overallGrade !== null
+              ? getRemarks(overallGrade)
+              : '';
 
           return [
             String(index + 1),
@@ -1900,7 +1889,9 @@ export function AssessmentsPage() {
             integrated ? formatScore(integrated.participation) : '',
             integrated ? formatScore(integrated.copybook) : '',
             integrated ? formatScore(integrated.projects) : '',
-            integratedTotal !== null ? formatScoreOutOf(integratedTotal, 20) : '',
+            integratedTotal !== null
+              ? formatScoreOutOf(integratedTotal, 20)
+              : '',
             quiz1 !== null ? formatScoreOutOf(quiz1, 10) : '',
             quiz2 !== null ? formatScoreOutOf(quiz2, 10) : '',
             quizTotal !== null ? formatScoreOutOf(quizTotal, 20) : '',
@@ -1948,18 +1939,18 @@ export function AssessmentsPage() {
             fillColor: [255, 252, 245],
           },
           columnStyles: {
-            0: { cellWidth: 8, halign: 'center' },
-            1: { cellWidth: 53, halign: 'left' },
-            2: { cellWidth: 15, halign: 'center' },
-            3: { cellWidth: 17, halign: 'center' },
-            4: { cellWidth: 15, halign: 'center' },
-            5: { cellWidth: 15, halign: 'center' },
-            6: { cellWidth: 18, halign: 'center' },
-            7: { cellWidth: 13, halign: 'center' },
-            8: { cellWidth: 13, halign: 'center' },
-            9: { cellWidth: 20, halign: 'center', fontStyle: 'normal' },
-            10: { cellWidth: 16, halign: 'center', fontStyle: 'normal' },
-            11: { cellWidth: 28, halign: 'left', fontStyle: 'normal' },
+            0: { cellWidth: 7, halign: 'center' },
+            1: { cellWidth: 43, halign: 'left' },
+            2: { cellWidth: 13, halign: 'center' },
+            3: { cellWidth: 13, halign: 'center' },
+            4: { cellWidth: 13, halign: 'center' },
+            5: { cellWidth: 13, halign: 'center' },
+            6: { cellWidth: 15, halign: 'center', fontStyle: 'normal' },
+            7: { cellWidth: 11, halign: 'center' },
+            8: { cellWidth: 11, halign: 'center' },
+            9: { cellWidth: 17, halign: 'center', fontStyle: 'normal' },
+            10: { cellWidth: 15, halign: 'center', fontStyle: 'normal' },
+            11: { cellWidth: 18, halign: 'center', fontStyle: 'normal' },
           },
           didParseCell: (hookData) => {
             hookData.cell.styles.font = 'helvetica';
@@ -1983,14 +1974,16 @@ export function AssessmentsPage() {
             }
 
             if (hookData.section === 'body') {
-              if (hookData.column.index >= 7 && hookData.column.index <= 10) {
+              if (
+                hookData.column.index >= 6 &&
+                hookData.column.index <= 11
+              ) {
                 hookData.cell.styles.fontStyle = 'normal';
                 hookData.cell.styles.textColor = NAVY_DARK;
               }
 
               if (hookData.column.index === 11) {
-                hookData.cell.styles.fontStyle = 'normal';
-                hookData.cell.styles.textColor = NAVY_DARK;
+                hookData.cell.styles.fontStyle = 'bold';
               }
             }
           },

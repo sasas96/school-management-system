@@ -572,6 +572,17 @@ export function StudentsPage() {
   ] = useState('');
 
   /* =====================================================
+     BULK SELECTION
+  ===================================================== */
+
+  const [
+    selectedStudentIds,
+    setSelectedStudentIds,
+  ] = useState<Set<string>>(
+    () => new Set()
+  );
+
+  /* =====================================================
      FILTER
   ===================================================== */
 
@@ -681,54 +692,128 @@ export function StudentsPage() {
      SAVE STUDENT
   ===================================================== */
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.nameAr?.trim()) {
-      alert(
-        'Please enter the Arabic student name.'
-      );
+      alert('Please enter the Arabic student name.');
       return;
     }
 
     if (!form.classId) {
-      alert(
-        'Please select a class.'
-      );
+      alert('Please select a class.');
       return;
     }
 
-    const studentData = {
-      ...(form as Student),
-
-      id:
-        editingStudent?.id ||
-        `STU-${Date.now()}`,
-
-      name:
-        form.name?.trim() ||
-        form.nameAr.trim(),
-
-      nameAr:
-        form.nameAr.trim(),
-
-      massarCode:
-        form.massarCode?.trim() ||
-        '',
-
-      classId:
-        form.classId,
-    };
-
-    if (editingStudent) {
-      updateStudent(
-        studentData
-      );
-    } else {
-      addStudent(
-        studentData
-      );
+    if (form.gender !== 'Male' && form.gender !== 'Female') {
+      alert('Please select the student gender.');
+      return;
     }
 
-    closeModal();
+    const studentData: Student = {
+      ...(form as Student),
+      id:
+        editingStudent?.id ||
+        form.massarCode?.trim() ||
+        `STU-${Date.now()}`,
+      name: form.name?.trim() || form.nameAr.trim(),
+      nameAr: form.nameAr.trim(),
+      massarCode: form.massarCode?.trim() || '',
+      classId: form.classId,
+      gender: form.gender,
+    };
+
+    try {
+      if (editingStudent) {
+        await updateStudent(studentData);
+      } else {
+        await addStudent(studentData);
+      }
+
+      closeModal();
+    } catch (error) {
+      console.error('SAVE STUDENT ERROR:', error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Failed to save student.'
+      );
+    }
+  };
+
+  /* =====================================================
+     BULK SELECTION
+  ===================================================== */
+
+  const toggleStudentSelection = (
+    studentId: string
+  ) => {
+    setSelectedStudentIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(studentId)) {
+        next.delete(studentId);
+      } else {
+        next.add(studentId);
+      }
+
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedStudentIds((current) => {
+      const next = new Set(current);
+
+      const allVisibleSelected =
+        filteredStudents.length > 0 &&
+        filteredStudents.every((student) =>
+          next.has(student.id)
+        );
+
+      if (allVisibleSelected) {
+        filteredStudents.forEach((student) =>
+          next.delete(student.id)
+        );
+      } else {
+        filteredStudents.forEach((student) =>
+          next.add(student.id)
+        );
+      }
+
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    const selected = students.filter((student) =>
+      selectedStudentIds.has(student.id)
+    );
+
+    if (!selected.length) return;
+
+    const confirmed = window.confirm(
+      `Delete ${selected.length} selected student(s)?\n\nThis will also delete their attendance, assessment and activity records. This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      for (const student of selected) {
+        await deleteStudent(student.id);
+      }
+
+      setSelectedStudentIds(new Set());
+    } catch (error) {
+      console.error(
+        'BULK DELETE STUDENTS ERROR:',
+        error
+      );
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Failed to delete selected students.'
+      );
+    }
   };
 
   /* =====================================================
@@ -1121,7 +1206,7 @@ export function StudentsPage() {
             ...emptyStudent(),
 
             id:
-              `STU-${Date.now()}-${index}`,
+              massar || `STU-${Date.now()}-${index}`,
 
             massarCode:
               massar,
@@ -1137,9 +1222,14 @@ export function StudentsPage() {
 
             classId:
               importClassId,
+
+            // Gender is required by the current Student model.
+            // Excel import does not ask the teacher for it.
+            gender:
+              'Male',
           } as Student;
 
-          addStudent(
+          await addStudent(
             student
           );
 
@@ -1330,6 +1420,24 @@ export function StudentsPage() {
 
         </div>
 
+        {/* BULK ACTIONS */}
+        {selectedStudentIds.size > 0 && (
+          <div className="mb-4 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-medium text-gray-700">
+              {selectedStudentIds.size} student(s) selected
+            </p>
+
+            <button
+              type="button"
+              onClick={handleDeleteSelected}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700"
+            >
+              <Trash2 size={17} />
+              Delete Selected
+            </button>
+          </div>
+        )}
+
         {/* TABLE */}
 
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -1342,9 +1450,34 @@ export function StudentsPage() {
 
                 <tr>
 
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Student
-                  </th>
+                  <th className="w-12 px-5 py-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={
+                          filteredStudents.length > 0 &&
+                          filteredStudents.every((student) =>
+                            selectedStudentIds.has(student.id)
+                          )
+                        }
+                        ref={(element) => {
+                          if (element) {
+                            element.indeterminate =
+                              filteredStudents.some((student) =>
+                                selectedStudentIds.has(student.id)
+                              ) &&
+                              !filteredStudents.every((student) =>
+                                selectedStudentIds.has(student.id)
+                              );
+                          }
+                        }}
+                        onChange={toggleSelectAll}
+                        aria-label="Select all visible students"
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Student
+                    </th>
 
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                     Massar
@@ -1368,7 +1501,7 @@ export function StudentsPage() {
                   <tr>
 
                     <td
-                      colSpan={4}
+                      colSpan={5}
                       className="px-5 py-12 text-center text-sm text-gray-500"
                     >
                       No students found.
@@ -1385,9 +1518,23 @@ export function StudentsPage() {
                         className="transition hover:bg-gray-50"
                       >
 
-                        <td className="px-5 py-4">
+                        <td className="w-12 px-5 py-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedStudentIds.has(student.id)}
+                            onChange={() =>
+                              toggleStudentSelection(student.id)
+                            }
+                            aria-label={`Select ${
+                              student.nameAr ||
+                              student.name
+                            }`}
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
+                        </td>
 
-                          <div>
+                        <td className="px-5 py-4">
+<div>
 
                             <p
                               dir="rtl"
@@ -1611,6 +1758,22 @@ export function StudentsPage() {
                           item.name,
                       })
                     ),
+                  ]}
+                />
+
+                <Select
+                  label="Gender *"
+                  value={form.gender || ''}
+                  onChange={(value) =>
+                    handleChange(
+                      'gender',
+                      value as Student['gender']
+                    )
+                  }
+                  options={[
+                    { value: '', label: 'Select gender' },
+                    { value: 'Male', label: 'Male' },
+                    { value: 'Female', label: 'Female' },
                   ]}
                 />
 
