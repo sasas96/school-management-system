@@ -1301,10 +1301,6 @@ export function DataProvider({
       throw new Error('Authentication changed. Please refresh and try again.');
     }
 
-    if (student.gender !== 'Male' && student.gender !== 'Female') {
-      throw new Error('Student gender is required. Please select Male or Female.');
-    }
-
     // The legacy importer used MassarCode as students.id. Because id is the
     // table-wide primary key, that breaks as soon as another teacher imports
     // the same Massar code. Convert only newly-added Massar-based ids to a
@@ -1370,10 +1366,6 @@ export function DataProvider({
 
     if (user.id !== authUserId) {
       throw new Error('Authentication changed. Please refresh and try again.');
-    }
-
-    if (student.gender !== 'Male' && student.gender !== 'Female') {
-      throw new Error('Student gender is required. Please select Male or Female.');
     }
 
     const payload = studentToDb(student, user.id);
