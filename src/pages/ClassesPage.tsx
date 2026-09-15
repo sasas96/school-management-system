@@ -6,10 +6,6 @@ import { Plus, Pencil, Trash2 } from 'lucide-react';
 
 const LEVELS = ['1APIC', '2APIC', '3APIC'] as const;
 
-/* =====================================================
-   CURRENT ACADEMIC YEAR
-   ===================================================== */
-
 const CURRENT_ACADEMIC_YEAR = '2026/2027';
 
 const empty: ClassRoom = {
@@ -27,21 +23,21 @@ export function ClassesPage() {
   const [form, setForm] = useState<ClassRoom>(empty);
 
   /* =====================================================
-     GENERATE INTERNAL ID
+     GENERATE UNIQUE INTERNAL ID
      ===================================================== */
 
-  const suggestId = () => {
-    let n = 1;
+  const suggestId = (): string => {
+    return `C-${crypto.randomUUID()}`;
+  };
 
-    const ids = new Set(
-      data.classes.map((classRoom) => classRoom.id)
-    );
+  /* =====================================================
+     CLOSE MODAL
+     ===================================================== */
 
-    while (ids.has(`C${String(n).padStart(2, '0')}`)) {
-      n++;
-    }
-
-    return `C${String(n).padStart(2, '0')}`;
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditing(null);
+    setForm(empty);
   };
 
   /* =====================================================
@@ -102,20 +98,12 @@ export function ClassesPage() {
     /* =================================================
        CHECK DUPLICATE
 
-       A class is considered duplicate ONLY when:
+       Duplicate only when:
        - Class Name is the same
        - Level is the same
        - Academic Year is the same
 
-       Example:
-
-       1APIC / 1 / 2026/2027   ✅
-       2APIC / 1 / 2026/2027   ✅
-
-       But:
-
-       1APIC / 1 / 2026/2027   ❌
-       1APIC / 1 / 2026/2027   ❌
+       Different teachers can have the same class.
        ================================================= */
 
     const duplicate = data.classes.some(
@@ -149,6 +137,7 @@ export function ClassesPage() {
             classRoom.id === editing.id
               ? {
                   ...form,
+                  id: editing.id,
                   name,
                   grade,
                   academicYear,
@@ -157,18 +146,18 @@ export function ClassesPage() {
         ),
       }));
 
-      setModalOpen(false);
-      setEditing(null);
-
+      closeModal();
       return;
     }
 
     /* =================================================
        ADD NEW CLASS
+
+       IMPORTANT:
+       Generate a globally unique ID here.
        ================================================= */
 
     const newClass: ClassRoom = {
-      ...form,
       id: suggestId(),
       name,
       grade,
@@ -184,8 +173,7 @@ export function ClassesPage() {
       ],
     }));
 
-    setModalOpen(false);
-    setEditing(null);
+    closeModal();
   };
 
   /* =====================================================
@@ -256,6 +244,15 @@ export function ClassesPage() {
         currentData.integratedActivities?.filter(
           (activity) =>
             activity.classId !==
+            classRoom.id
+        ) ?? [],
+
+      /* REMOVE DIAGNOSTIC TESTS */
+
+      diagnosticTests:
+        currentData.diagnosticTests?.filter(
+          (diagnostic) =>
+            diagnostic.classId !==
             classRoom.id
         ) ?? [],
     }));
@@ -462,16 +459,10 @@ export function ClassesPage() {
             ? 'Edit Class'
             : 'Add Class'
         }
-        onClose={() => {
-          setModalOpen(false);
-          setEditing(null);
-        }}
+        onClose={closeModal}
       >
         <div className="space-y-4">
-
-          {/* =================================================
-              LEVEL
-              ================================================= */}
+          {/* LEVEL */}
 
           <Field label="Level">
             <select
@@ -500,9 +491,7 @@ export function ClassesPage() {
             </select>
           </Field>
 
-          {/* =================================================
-              ACADEMIC YEAR
-              ================================================= */}
+          {/* ACADEMIC YEAR */}
 
           <Field label="Academic Year">
             <select
@@ -524,9 +513,7 @@ export function ClassesPage() {
             </select>
           </Field>
 
-          {/* =================================================
-              CLASS NAME
-              ================================================= */}
+          {/* CLASS NAME */}
 
           <Field label="Class Name">
             <input
@@ -545,17 +532,12 @@ export function ClassesPage() {
             />
           </Field>
 
-          {/* =================================================
-              BUTTONS
-              ================================================= */}
+          {/* BUTTONS */}
 
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={() => {
-                setModalOpen(false);
-                setEditing(null);
-              }}
+              onClick={closeModal}
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
             >
               Cancel
@@ -578,7 +560,7 @@ export function ClassesPage() {
 }
 
 /* =====================================================
-   FIELD
+   FIELD COMPONENT
    ===================================================== */
 
 export function Field({
