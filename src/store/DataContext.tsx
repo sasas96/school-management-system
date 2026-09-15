@@ -561,6 +561,7 @@ function emptyData(): AppData {
 async function loadRemoteData(userId: string): Promise<AppData> {
 
   const [
+    profileResult,
     classesResult,
     studentsResult,
     attendanceResult,
@@ -568,6 +569,12 @@ async function loadRemoteData(userId: string): Promise<AppData> {
     activitiesResult,
     diagnosticsResult,
   ] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('school_name, teacher_name')
+      .eq('id', userId)
+      .maybeSingle(),
+
     supabase
       .from('classes')
       .select('*')
@@ -599,6 +606,9 @@ async function loadRemoteData(userId: string): Promise<AppData> {
       .eq('user_id', userId),
   ]);
 
+  if (profileResult.error)
+    throw profileResult.error;
+
   if (classesResult.error)
     throw classesResult.error;
 
@@ -623,8 +633,8 @@ async function loadRemoteData(userId: string): Promise<AppData> {
       : (diagnosticsResult.data ?? []);
 
   return {
-    schoolName: '',
-    teacherName: '',
+    schoolName: profileResult.data?.school_name ?? '',
+    teacherName: profileResult.data?.teacher_name ?? '',
 
     classes:
       (classesResult.data ?? [])
@@ -695,6 +705,24 @@ async function saveRemoteData(
       (item) =>
         diagnosticToDb(item, userId)
     );
+
+  /* ===================================================
+     UPSERT TEACHER PROFILE / SETTINGS
+  =================================================== */
+
+  const profileResult = await supabase
+    .from('profiles')
+    .upsert(
+      {
+        id: userId,
+        school_name: data.schoolName ?? '',
+        teacher_name: data.teacherName ?? '',
+      },
+      { onConflict: 'id' }
+    );
+
+  if (profileResult.error)
+    throw profileResult.error;
 
   /* ===================================================
      EXISTING IDS
