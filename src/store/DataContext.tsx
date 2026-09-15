@@ -204,9 +204,20 @@ function studentToDb(
 function studentFromDb(
   row: any
 ): Student {
+  // New students use a teacher-scoped database id in order to avoid
+  // primary-key collisions when two teachers have the same Massar code.
+  // Existing records keep their original ids for backward compatibility.
+  const rawId = String(row.id ?? '');
+  const separator = '::';
+  const separatorIndex = rawId.indexOf(separator);
+  const isScopedId = separatorIndex > -1;
+  const massarCode = isScopedId
+    ? rawId.slice(separatorIndex + separator.length)
+    : rawId;
+
   return {
-    id: row.id,
-    massarCode: row.id,
+    id: rawId,
+    massarCode,
     name: row.name,
     nameAr: row.name_ar ?? undefined,
     dateOfBirth:
@@ -1031,6 +1042,15 @@ export function DataProvider({
   // older request is still running, the older request is ignored.
   const loadVersion = useRef(0);
 
+  // Autosave must be serialized. Without a queue, rapid state changes can
+  // start overlapping full syncs and an older snapshot can finish last and
+  // delete records that were added by a newer snapshot.
+  const pendingSaveRef = useRef<{
+    data: AppData;
+    userId: string;
+  } | null>(null);
+  const saveRunningRef = useRef(false);
+
   /* ===================================================
      LOAD DATA FOR A SPECIFIC USER
   =================================================== */
@@ -1154,42 +1174,47 @@ export function DataProvider({
   useEffect(() => {
     if (!loaded || !initialLoadComplete || !authUserId) return;
 
-    let cancelled = false;
+    // Keep only the newest snapshot while a save is running.
+    pendingSaveRef.current = {
+      data,
+      userId: authUserId,
+    };
 
-    async function sync() {
-      try {
-        // Verify that the current browser session still belongs to the same
-        // user whose data was loaded. Never write data across user changes.
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser();
+    if (saveRunningRef.current) return;
 
-        if (cancelled) return;
+    saveRunningRef.current = true;
 
-        if (error) {
-          console.error('Authentication error while saving:', error);
-          return;
-        }
+    const runSaveQueue = async () => {
+      while (pendingSaveRef.current) {
+        const job = pendingSaveRef.current;
+        pendingSaveRef.current = null;
 
-        if (!user || user.id !== authUserId) {
-          console.warn('User changed during save. Skipping autosave.');
-          return;
-        }
+        try {
+          const {
+            data: { user },
+            error,
+          } = await supabase.auth.getUser();
 
-        await saveRemoteData(data, authUserId);
-      } catch (error) {
-        if (!cancelled) {
+          if (error) {
+            console.error('Authentication error while saving:', error);
+            continue;
+          }
+
+          if (!user || user.id !== job.userId) {
+            console.warn('User changed during save. Skipping autosave.');
+            continue;
+          }
+
+          await saveRemoteData(job.data, job.userId);
+        } catch (error) {
           console.error('Failed to save Supabase data:', error);
         }
       }
-    }
 
-    void sync();
-
-    return () => {
-      cancelled = true;
+      saveRunningRef.current = false;
     };
+
+    void runSaveQueue();
   }, [data, loaded, initialLoadComplete, authUserId]);
 
   /* ===================================================
@@ -1252,7 +1277,26 @@ export function DataProvider({
       throw new Error('Student gender is required. Please select Male or Female.');
     }
 
-    const payload = studentToDb(student, user.id);
+    // The legacy importer used MassarCode as students.id. Because id is the
+    // table-wide primary key, that breaks as soon as another teacher imports
+    // the same Massar code. Convert only newly-added Massar-based ids to a
+    // teacher-scoped id. Existing students keep their original ids, so their
+    // grades/attendance foreign keys remain intact.
+    let studentToInsert = student;
+
+    const massar = student.massarCode?.trim() ?? '';
+    const alreadyScoped =
+      massar.length > 0 &&
+      student.id === `${user.id}::${massar}`;
+
+    if (massar && student.id === massar && !alreadyScoped) {
+      studentToInsert = {
+        ...student,
+        id: `${user.id}::${massar}`,
+      };
+    }
+
+    const payload = studentToDb(studentToInsert, user.id);
 
     const { data: inserted, error } = await supabase
       .from('students')
