@@ -67,7 +67,7 @@ function studentToDb(
     name_ar: student.nameAr ?? null,
     date_of_birth: student.dateOfBirth || null,
     class_id: student.classId,
-    gender: student.gender,
+    gender: student.gender ?? 'Male',
 
     learning_style:
       student.learningStyle ?? null,
