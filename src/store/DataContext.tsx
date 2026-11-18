@@ -67,6 +67,8 @@ function studentToDb(
     name_ar: student.nameAr ?? null,
     date_of_birth: student.dateOfBirth || null,
     class_id: student.classId,
+    // Null for legacy students; assigned only to newly added students.
+    display_order: student.displayOrder ?? null,
     gender: student.gender ?? 'Male',
 
     learning_style:
@@ -223,6 +225,10 @@ function studentFromDb(
     dateOfBirth:
       row.date_of_birth ?? undefined,
     classId: row.class_id,
+    displayOrder:
+      row.display_order == null
+        ? undefined
+        : Number(row.display_order),
     gender: row.gender,
 
     learningStyle:
@@ -558,6 +564,23 @@ function emptyData(): AppData {
    LOAD FROM SUPABASE
 ===================================================== */
 
+function orderStudentsForDisplay(students: Student[]): Student[] {
+  return students
+    .map((student, originalIndex) => ({ student, originalIndex }))
+    .sort((a, b) => {
+      const aOrder = a.student.displayOrder;
+      const bOrder = b.student.displayOrder;
+
+      // Keep legacy students (without an order) ahead of new additions.
+      // Their relative order is deliberately not changed.
+      if (aOrder == null && bOrder == null) return a.originalIndex - b.originalIndex;
+      if (aOrder == null) return -1;
+      if (bOrder == null) return 1;
+      return aOrder - bOrder || a.originalIndex - b.originalIndex;
+    })
+    .map(({ student }) => student);
+}
+
 async function loadRemoteData(userId: string): Promise<AppData> {
 
   const [
@@ -641,8 +664,9 @@ async function loadRemoteData(userId: string): Promise<AppData> {
         .map(classFromDb),
 
     students:
-      (studentsResult.data ?? [])
-        .map(studentFromDb),
+      orderStudentsForDisplay(
+        (studentsResult.data ?? []).map(studentFromDb)
+      ),
 
     attendance:
       (attendanceResult.data ?? [])
@@ -1306,7 +1330,25 @@ export function DataProvider({
     // the same Massar code. Convert only newly-added Massar-based ids to a
     // teacher-scoped id. Existing students keep their original ids, so their
     // grades/attendance foreign keys remain intact.
-    let studentToInsert = student;
+    const classStudents = data.students.filter(
+      (item) => item.classId === student.classId
+    );
+    const existingOrderValues = classStudents
+      .map((item) => item.displayOrder)
+      .filter((value): value is number =>
+        typeof value === 'number' && Number.isFinite(value)
+      );
+    const nextDisplayOrder = existingOrderValues.length
+      ? Math.max(...existingOrderValues) + 1
+      : 0;
+
+    let studentToInsert: Student = {
+      ...student,
+      displayOrder:
+        typeof student.displayOrder === 'number'
+          ? student.displayOrder
+          : nextDisplayOrder,
+    };
 
     const massar = student.massarCode?.trim() ?? '';
     const alreadyScoped =

@@ -160,6 +160,7 @@ export type HealthConsideration =
 export interface Student {
   id: string;
   massarCode: string;
+  displayOrder?: number;
   name: string;
   nameAr?: string;
   dateOfBirth?: string;

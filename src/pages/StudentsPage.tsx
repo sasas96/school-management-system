@@ -1150,6 +1150,20 @@ const studentData: Student = {
         let added = 0;
         let skipped = 0;
 
+        // Start after the highest explicitly ordered student in this class.
+        // Existing legacy students have no displayOrder and are left untouched.
+        const classStudents = students.filter(
+          (student) => student.classId === importClassId
+        );
+        const existingOrders = classStudents
+          .map((student) => student.displayOrder)
+          .filter((value): value is number =>
+            typeof value === 'number' && Number.isFinite(value)
+          );
+        let nextDisplayOrder = existingOrders.length
+          ? Math.max(...existingOrders) + 1
+          : 0;
+
         for (
           let index = 0;
           index <
@@ -1216,6 +1230,10 @@ const studentData: Student = {
             classId:
               importClassId,
 
+            // Persist the exact Excel row order for this new import.
+            displayOrder:
+              nextDisplayOrder,
+
             // Backend compatibility only. Gender is not shown or requested in the UI.
             gender:
               'Male',
@@ -1238,6 +1256,7 @@ const studentData: Student = {
           }
 
           added++;
+          nextDisplayOrder++;
         }
 
         if (added === 0) {
