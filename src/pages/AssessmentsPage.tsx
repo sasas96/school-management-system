@@ -288,7 +288,6 @@ export function AssessmentsPage() {
     setSaved(false);
   }, [
     classStudents,
-    assessments,
     classId,
     academicYear,
     term,
@@ -348,7 +347,6 @@ export function AssessmentsPage() {
     setSaved(false);
   }, [
     classStudents,
-    integratedActivities,
     classId,
     academicYear,
     term,
@@ -390,7 +388,6 @@ export function AssessmentsPage() {
     setSaved(false);
   }, [
     classStudents,
-    diagnosticTests,
     classId,
     academicYear,
     term,
@@ -413,6 +410,89 @@ export function AssessmentsPage() {
     }));
 
     setSaved(false);
+
+    // Auto-save only complete, valid numeric values.
+    // Empty or temporarily invalid input stays in the local draft.
+    if (value.trim() === '') return;
+
+    const score = Number(value);
+    if (
+      !Number.isFinite(score) ||
+      score < 0 ||
+      score > maxScore ||
+      !classId ||
+      !academicYear
+    ) {
+      return;
+    }
+
+    if (isDiagnostic) {
+      setData((previous) => {
+        const current = previous.diagnosticTests ?? [];
+        const existing = current.find(
+          (item) =>
+            item.studentId === studentId &&
+            item.classId === classId &&
+            item.academicYear === academicYear &&
+            item.term === term
+        );
+
+        const record: DiagnosticTestRecord = {
+          id: existing?.id ?? `D-${Date.now()}-${studentId}`,
+          studentId,
+          classId,
+          academicYear,
+          date,
+          term,
+          score,
+          maxScore: 20,
+        };
+
+        return {
+          ...previous,
+          diagnosticTests: [
+            ...current.filter((item) => item.id !== record.id),
+            record,
+          ],
+        };
+      });
+      return;
+    }
+
+    if (!isIntegrated && selectedAssessment) {
+      setData((previous) => {
+        const current = previous.assessments ?? [];
+        const existing = current.find(
+          (item) =>
+            item.studentId === studentId &&
+            item.classId === classId &&
+            item.academicYear === academicYear &&
+            item.term === term &&
+            item.name === assessmentName
+        );
+
+        const record: AssessmentRecord = {
+          id: existing?.id ?? `A-${Date.now()}-${studentId}`,
+          studentId,
+          classId,
+          academicYear,
+          date,
+          name: assessmentName as OfficialAssessment,
+          type: assessmentName === 'Global Test' ? 'Test' : 'Quiz',
+          term,
+          score,
+          maxScore,
+        };
+
+        return {
+          ...previous,
+          assessments: [
+            ...current.filter((item) => item.id !== record.id),
+            record,
+          ],
+        };
+      });
+    }
   };
 
   /*
@@ -428,17 +508,76 @@ export function AssessmentsPage() {
   ) => {
     setIntegratedDraft((current) => ({
       ...current,
-
       [studentId]: {
         ...(current[studentId] ?? {
           ...EMPTY_INTEGRATED_VALUES,
         }),
-
         [field]: value,
       },
     }));
 
     setSaved(false);
+
+    // Save each integrated field as soon as it contains a valid score.
+    if (value.trim() === '') return;
+
+    const score = Number(value);
+    if (
+      !Number.isFinite(score) ||
+      score < 0 ||
+      score > 5 ||
+      !classId ||
+      !academicYear
+    ) {
+      return;
+    }
+
+    setData((previous) => {
+      const current = previous.integratedActivities ?? [];
+      const existing = current.find(
+        (item) =>
+          item.studentId === studentId &&
+          item.classId === classId &&
+          item.academicYear === academicYear &&
+          item.term === term &&
+          item.date === date
+      );
+
+      const previousValues = integratedDraft[studentId] ?? {
+        ...EMPTY_INTEGRATED_VALUES,
+      };
+
+      const values = {
+        discipline: Number(previousValues.discipline) || 0,
+        participation: Number(previousValues.participation) || 0,
+        copybook: Number(previousValues.copybook) || 0,
+        projects: Number(previousValues.projects) || 0,
+        [field]: score,
+      };
+
+      const record: IntegratedActivityRecord = {
+        id: existing?.id ?? `IA-${Date.now()}-${studentId}`,
+        studentId,
+        classId,
+        academicYear,
+        term,
+        date,
+        ...values,
+        total:
+          values.discipline +
+          values.participation +
+          values.copybook +
+          values.projects,
+      };
+
+      return {
+        ...previous,
+        integratedActivities: [
+          ...current.filter((item) => item.id !== record.id),
+          record,
+        ],
+      };
+    });
   };
 
   const getIntegratedScore = (
@@ -2374,6 +2513,10 @@ export function AssessmentsPage() {
           <>
 
             <div className="flex items-center gap-3">
+
+              <span className="text-xs text-emerald-700">
+                Auto-save enabled
+              </span>
 
               <button
                 type="button"
