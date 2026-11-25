@@ -2519,16 +2519,14 @@ export function AssessmentsPage() {
 
             <div className="flex items-center gap-3 flex-wrap">
 
-              {!isIntegrated && (
-                <button
-                  type="button"
-                  onClick={() => setIsScannerOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3.5 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
-                >
-                  <Upload size={16} />
-                  Import Marks
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setIsScannerOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3.5 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+              >
+                <Upload size={16} />
+                Fill Marks List
+              </button>
 
               <span className="text-xs text-emerald-700">
                 Auto-save enabled
@@ -2976,113 +2974,16 @@ export function AssessmentsPage() {
         </p>
       )}
 
-      {isScannerOpen && !isIntegrated && (
+      {isScannerOpen && (
         <SmartMarksScanner
           onClose={() => setIsScannerOpen(false)}
-          students={classStudents.map((student) => ({
-            id: student.id,
-            name: student.name,
-            massarCode: student.massarCode,
-          }))}
-          maxScore={maxScore}
-          assessmentLabel={`${term} · ${assessmentName}`}
-          existingScores={Object.fromEntries(
-            classStudents.flatMap((student) => {
-              if (isIntegrated) return [];
-              const existing = isDiagnostic
-                ? diagnosticTests.find((item) =>
-                    item.studentId === student.id &&
-                    item.classId === classId &&
-                    item.academicYear === academicYear &&
-                    item.term === term
-                  )
-                : assessments.find((item) =>
-                    item.studentId === student.id &&
-                    item.classId === classId &&
-                    item.academicYear === academicYear &&
-                    item.term === term &&
-                    item.name === assessmentName
-                  );
-              return existing ? [[student.id, existing.score] as [string, number]] : [];
-            })
-          )}
-          onConfirm={(marks) => {
-            if (isIntegrated) {
-              alert('Importing Integrated Activities is not supported in this scanner yet.');
-              return;
-            }
-
-            setData((previous) => {
-              if (isDiagnostic) {
-                const current = previous.diagnosticTests ?? [];
-                const imported: DiagnosticTestRecord[] = marks.map((mark, index) => {
-                  const existing = current.find((item) =>
-                    item.studentId === mark.studentId &&
-                    item.classId === classId &&
-                    item.academicYear === academicYear &&
-                    item.term === term
-                  );
-                  return {
-                    id: existing?.id ?? `D-IMPORT-${Date.now()}-${index}`,
-                    studentId: mark.studentId,
-                    classId,
-                    academicYear,
-                    date,
-                    term,
-                    score: mark.score,
-                    maxScore: 20,
-                  };
-                });
-                const importedIds = new Set(imported.map((item) => item.studentId));
-                return {
-                  ...previous,
-                  diagnosticTests: [
-                    ...current.filter((item) =>
-                      !(importedIds.has(item.studentId) && item.classId === classId &&
-                        item.academicYear === academicYear && item.term === term)
-                    ),
-                    ...imported,
-                  ],
-                };
-              }
-
-              const current = previous.assessments ?? [];
-              const imported: AssessmentRecord[] = marks.map((mark, index) => {
-                const existing = current.find((item) =>
-                  item.studentId === mark.studentId &&
-                  item.classId === classId &&
-                  item.academicYear === academicYear &&
-                  item.term === term &&
-                  item.name === assessmentName
-                );
-                return {
-                  id: existing?.id ?? `A-IMPORT-${Date.now()}-${index}`,
-                  studentId: mark.studentId,
-                  classId,
-                  academicYear,
-                  date,
-                  name: assessmentName as OfficialAssessment,
-                  type: assessmentName === 'Global Test' ? 'Test' : 'Quiz',
-                  term,
-                  score: mark.score,
-                  maxScore,
-                };
-              });
-              const importedIds = new Set(imported.map((item) => item.studentId));
-              return {
-                ...previous,
-                assessments: [
-                  ...current.filter((item) =>
-                    !(importedIds.has(item.studentId) && item.classId === classId &&
-                      item.academicYear === academicYear && item.term === term &&
-                      item.name === assessmentName)
-                  ),
-                  ...imported,
-                ],
-              };
-            });
-            setSaved(true);
-          }}
+          students={classStudents}
+          assessments={assessments}
+          diagnosticTests={diagnosticTests}
+          integratedActivities={integratedActivities}
+          classId={classId}
+          academicYear={academicYear}
+          term={term}
         />
       )}
 
