@@ -1,3 +1,4 @@
+
 import type { AppData } from '@/types';
 
 export function demoData(): AppData {
@@ -44,6 +45,7 @@ export function demoData(): AppData {
     // 7A
     {
       id: 'STU001',
+      massarCode: '',
       name: 'محمد أمين العلوي',
       nameAr: 'محمد أمين العلوي',
       classId: '7A',
@@ -51,6 +53,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU002',
+      massarCode: '',
       name: 'سلمى الإدريسي',
       nameAr: 'سلمى الإدريسي',
       classId: '7A',
@@ -58,6 +61,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU003',
+      massarCode: '',
       name: 'يوسف بنعلي',
       nameAr: 'يوسف بنعلي',
       classId: '7A',
@@ -65,6 +69,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU004',
+      massarCode: '',
       name: 'آية الحسناوي',
       nameAr: 'آية الحسناوي',
       classId: '7A',
@@ -74,6 +79,7 @@ export function demoData(): AppData {
     // 7B
     {
       id: 'STU005',
+      massarCode: '',
       name: 'حمزة المرابط',
       nameAr: 'حمزة المرابط',
       classId: '7B',
@@ -81,6 +87,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU006',
+      massarCode: '',
       name: 'مريم الزهراء',
       nameAr: 'مريم الزهراء',
       classId: '7B',
@@ -88,6 +95,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU007',
+      massarCode: '',
       name: 'أنس الكتاني',
       nameAr: 'أنس الكتاني',
       classId: '7B',
@@ -95,6 +103,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU008',
+      massarCode: '',
       name: 'إيمان الفاسي',
       nameAr: 'إيمان الفاسي',
       classId: '7B',
@@ -104,6 +113,7 @@ export function demoData(): AppData {
     // 8A
     {
       id: 'STU009',
+      massarCode: '',
       name: 'عبد الرحمان التازي',
       nameAr: 'عبد الرحمان التازي',
       classId: '8A',
@@ -111,6 +121,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU010',
+      massarCode: '',
       name: 'سارة العمري',
       nameAr: 'سارة العمري',
       classId: '8A',
@@ -118,6 +129,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU011',
+      massarCode: '',
       name: 'أيوب الراشدي',
       nameAr: 'أيوب الراشدي',
       classId: '8A',
@@ -125,6 +137,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU012',
+      massarCode: '',
       name: 'هدى بنعيسى',
       nameAr: 'هدى بنعيسى',
       classId: '8A',
@@ -134,6 +147,7 @@ export function demoData(): AppData {
     // 8B
     {
       id: 'STU013',
+      massarCode: '',
       name: 'يوسف العثماني',
       nameAr: 'يوسف العثماني',
       classId: '8B',
@@ -141,6 +155,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU014',
+      massarCode: '',
       name: 'نور الهدى',
       nameAr: 'نور الهدى',
       classId: '8B',
@@ -148,6 +163,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU015',
+      massarCode: '',
       name: 'إلياس الصديقي',
       nameAr: 'إلياس الصديقي',
       classId: '8B',
@@ -155,6 +171,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU016',
+      massarCode: '',
       name: 'كوثر أمين',
       nameAr: 'كوثر أمين',
       classId: '8B',
@@ -164,6 +181,7 @@ export function demoData(): AppData {
     // 9A
     {
       id: 'STU017',
+      massarCode: '',
       name: 'أيمن العروسي',
       nameAr: 'أيمن العروسي',
       classId: '9A',
@@ -171,6 +189,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU018',
+      massarCode: '',
       name: 'ملاك الإدريسي',
       nameAr: 'ملاك الإدريسي',
       classId: '9A',
@@ -178,6 +197,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU019',
+      massarCode: '',
       name: 'رضوان الشاوي',
       nameAr: 'رضوان الشاوي',
       classId: '9A',
@@ -185,6 +205,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU020',
+      massarCode: '',
       name: 'ريم التازي',
       nameAr: 'ريم التازي',
       classId: '9A',
@@ -194,6 +215,7 @@ export function demoData(): AppData {
     // 9B
     {
       id: 'STU021',
+      massarCode: '',
       name: 'سفيان المريني',
       nameAr: 'سفيان المريني',
       classId: '9B',
@@ -201,6 +223,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU022',
+      massarCode: '',
       name: 'جنان الفاسي',
       nameAr: 'جنان الفاسي',
       classId: '9B',
@@ -208,6 +231,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU023',
+      massarCode: '',
       name: 'بلال الحسيني',
       nameAr: 'بلال الحسيني',
       classId: '9B',
@@ -215,6 +239,7 @@ export function demoData(): AppData {
     },
     {
       id: 'STU024',
+      massarCode: '',
       name: 'دعاء بنعلي',
       nameAr: 'دعاء بنعلي',
       classId: '9B',
